@@ -1,0 +1,235 @@
+---
+title: "Bases de datos relacionales"
+knitr: 
+  opts_chunk: 
+    eval: false
+---
+
+Los datos en las empresas suelen estar 
+en estos sistemas gestores de bases de datos, que requieren unos datos de conexión
+y a partir de ahí, los datos se pueden extraer con expresiones SQL. En el proyecto
+se van a crear bases de datos "locales" para practicar su creación y modificación, y se 
+utilizará una base de datos remota para leer datos en tiempo real desde R (sin
+necesidad de conocer SQL).
+
+Vamos a seguir los ejemplos y explicaciones del [Capítulo 21 de R for Data Science 2nd ed.](https://r4ds.hadley.nz/databases), aplicándolos a nuestros conjuntos de 
+datos de vino.
+
+## Preparación
+
+:::{callout-caution}
+Crea un proyecto de RStudio vacío. Crea las carpetas `datos` y `duckdb`.
+:::
+
+## Paquetes necesarios
+
+Paquetes básicos. Instálalos desde el panel _Packages_ de RStudio si no los tienes.
+
+```{r}
+library(DBI)
+library(dbplyr)
+library(tidyverse)
+```
+
+También necesitaremos el paquete {duckdb}, instálalo si no lo tienes.
+
+## Conexión a base de datos
+
+Las conexiones a bases de datos siempre tienen esta forma, a través del paquete {DBI}:
+
+```{r}
+#| eval: false
+con <- DBI::dbConnect(
+  RMariaDB::MariaDB(), 
+  username = "foo"
+)
+con <- DBI::dbConnect(
+  RPostgres::Postgres(), 
+  hostname = "databases.mycompany.com", 
+  port = 1234
+)
+```
+
+Los detalles de la conexión dependerán mucho del escenario concreto en el que
+estemos trabajando.
+
+## Creación de base de datos
+
+
+
+```{r}
+con <- DBI::dbConnect(
+  duckdb::duckdb(),
+  dbdir = "duckdb/wine.db"
+)
+```
+
+:::{.callout-caution}
+
+## Practicar
+
+Vamos a saltar al apartado de ETL para descargar un conjunto de datos
+de los que usaremos en el resto de las actividades, de forma que los
+podamos guardar en nuestra base de datos para los ejemplos. Cuando tengamos
+en el envorinment el data frame `winetasting`, seguimos.
+:::
+
+Antes de empezar, vemos que no hay ninguna tabla:
+
+
+```{r}
+dbListTables(con)
+```
+
+
+Cargamos los datos en nuestra base de datos:
+
+```{r}
+#| eval: false
+dbWriteTable(con, "tasting", winetasting)
+```
+
+Comprobamos que tenemos la nueva tabla.
+
+```{r}
+dbListTables(con)
+```
+
+Ahora podemos leer directamente de la base de datos. Las funciones de {DBI} "traen" a la memoria de R los datos. Si hay muchos datos, se colapsará.
+
+
+```{r}
+con |> 
+  dbReadTable("tasting") |> 
+  as_tibble()
+```
+
+Se pueden ejecutar expresiones SQL directamente si ya las tenemos (es habitual en las empresas que algún especialista en SQL la tenga ya desarrollada para la extracción de datos). En este ejemplo `dbSendQuery()` envía la consulta, pero no trae los datos. `dbFetch()` trae los datos a R. `dbGetQuery()` lo hace todo a la vez si tenemos claro que es lo que queremos.
+
+```{r}
+consulta <- "SELECT tasting.* FROM tasting WHERE (country = 'Spain')"
+dbSendQuery(con, statement = consulta) |> 
+  dbFetch()
+
+dbGetQuery(con, consulta)
+
+```
+
+
+## Trabajar en la base de datos desde R
+
+En vez de usar las funciones de {DBI}, podemos usar las de {dbplyr} y {dplyr}. La función `tbl()` crea un vínculo con la tabla de la base de 
+datos, pero no la "trae" a la memoria de R. Así podemos explorar los datos antes de traer lo que nos interese con `collect()`.
+
+
+
+```{r}
+winetbl <- tbl(con, "tasting")
+winetbl |> 
+  filter(country == "Spain")
+```
+
+Podemos ver la consulta SQL que se está haciendo a la base de datos:
+
+```{r}
+winetbl |> 
+  filter(country == "Spain") |> 
+show_query()
+```
+
+
+Un poco de exploración de datos. Ordenar por puntuación descendente, y ver cómo sería con SQL:
+
+```{r}
+winetbl |> 
+  filter(country == "Spain") |> 
+  arrange(desc(points))
+```
+
+```{r}
+winetbl |> 
+  filter(country == "Spain") |> 
+  arrange(desc(points)) |> 
+  show_query()
+```
+
+
+:::{callout-tip}
+Revisar más ejemplos de cómo se hace la conversión a SQL en el libro de Hadley.
+:::
+
+Para traer el resultado a R, función `collect()` (hasta entonces los datos solo están en la base de datos).
+
+```{r}
+vinos_es <- winetbl |> 
+  filter(country == "Spain") |> 
+  collect()
+```
+
+
+
+:::{.callout-caution}
+
+## Ejercicio
+
+Extrae los datos de las revisiones de vinos de España y Portugal y
+guardalos en un data.frame llamado vinos_ib.
+
+:::
+
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+```{r}
+vinos_ib <- winetbl |> 
+  filter(country %in% c("Spain", "Portugal")) |> 
+  collect()
+```
+
+:::
+
+
+
+## Leer datos de un servidor remoto
+
+Funciona exactamente igual, pero con los datos de conexión adecuados.
+
+Recomendaciones:
+
+* No poner nunca las contraseñas en el código. Usar variables de entorno. Crear archivo
+`.Renviron` en el proyecto con las variables de este modo:
+
+````
+PGPWD=xxxx
+HOST=yyyy
+````
+
+Ejemplo real (no funcionará porque los datos están enmascarados por seguridad):
+
+No compartir nunca este archivo, informar a los colaboradores por otros medios.
+
+```{r}
+con <- dbConnect(RPostgres::Postgres(),
+                 host = Sys.getenv("HOST"),
+                 dbname = "yyy_db",
+                 port = 0000,
+                 user = "XXX",
+                 password = Sys.getenv("PGPWD"))
+dbListTables(con)
+dbListFields(con, "NOMBRETABLA")
+```
+
+
+
+## Material adicional
+
+* Para aprender lo básico de SQL, con ejemplos en R y SQLite. [R, Databases & SQL](https://rdbsql.rsquaredacademy.com).
+
+* ¿Por qué es conveniento trabajar con proyectos en RStudio? [Capítulo 3 de What They Forgot to Teach You About R](https://rstats.wtf) (todo el libro es una lectura muy recomendada)
+
+* Control de cambios con git y GitHub. Esto es obligado en cualquier entorno de ciencia de datos. [Happy Git and GitHub for the useR](https://happygitwithr.com).
+
+* Gestión de la configuración con {renv}. En entornos "en producción", imprescindible para que las aplicaciones sean estables en el tiempo. [Introduction to renv](https://rstudio.github.io/renv/articles/renv.html)
+

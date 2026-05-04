@@ -1,0 +1,124 @@
+---
+title: "Fixes"
+editor: visual
+---
+
+
+Código final con el análisis sin dar error.
+
+```{r}
+#| eval: false
+library(shiny)
+library(bslib)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(DT)
+library(broom)
+library(report)
+library(giscoR)
+giscoR::gisco_get_countries()
+
+tasting <- read_rds("tasting.rds")
+
+ui <- page_navbar(
+  theme = bs_theme(bootswatch = "solar"),
+  title = "El vino y yo",
+  sidebar = sidebar(title = "Menú lateral",
+                    selectizeInput("ipais",
+                                   label = "País",
+                                   choices = unique(tasting$fct_country)),
+                    checkboxInput("ilog", label = "Logaritmo"),
+                    selectizeInput("icolormodelo",
+                                   label = "Color puntos",
+                                   choices = c("fct_country",
+                                               "fct_variety"))),
+  nav_panel("Exploración", 
+            "Análisis por país",
+            plotOutput("ohistprecio")),
+  nav_panel("Modelo de precio", 
+            "Estimación del precio",
+            navset_card_underline(
+              title = "Modelización",
+              nav_panel("Gráfico de dispersión",
+                        plotOutput("odisp")),
+              nav_panel("Coeficientes",
+                        dataTableOutput("ocoeficientes")),
+              nav_panel("Análisis",
+                        uiOutput("oanalisis"))
+            ))
+  
+)
+
+server <- function(input, output) {
+  output$ohistprecio <- renderPlot({
+    tasting |> 
+      filter(fct_country == input$ipais) |> 
+      ggplot(aes_string(x = ifelse(input$ilog, "logPrice", "price"))) +
+      geom_histogram(bins = 15, col = "white", fill = "orange")
+  })
+  output$odisp <- renderPlot({
+    tasting |>
+      ggplot(aes_string(y = ifelse(input$ilog, "logPrice", "price"),
+                        x = "points",
+                        col = input$icolormodelo)) +
+      geom_point()
+  })
+  output$ocoeficientes <- renderDT({
+    if(input$ilog){
+      f <- as.formula(paste0("logPrice ~ points + fct_country + fct_variety"))
+    } else{
+      f <- as.formula(paste0("price ~ points + fct_country + fct_variety"))
+    }
+    modelo <- lm(f, data = tasting)
+    datatable(modelo |> tidy()) |> 
+      formatRound(columns = 2:5, digits = 4)
+  })
+  
+  output$oanalisis <- renderText({
+    modelo <- lm(logPrice ~ points, data = tasting)
+    report(modelo) |> 
+      markdown()
+  })
+}
+
+shinyApp(ui, server)
+```
+
+
+## Ejemplo de mapa
+
+```{r}
+#| eval: false
+tasting <- read_rds("app/tasting.rds")
+countries <- giscoR::gisco_get_countries()
+
+library(sf)
+library(dplyr)
+library(leaflet)
+geo <- countries |> 
+  select(NAME_ENGL, geometry) |> 
+  right_join(tasting |> 
+               group_by(country) |> 
+               summarise(medPrice = median(price, na.rm = TRUE),
+                         avgPoints = mean(points, na.rm = TRUE),
+                         .groups = "drop"),
+            by = c("NAME_ENGL" = "country"))
+
+# bins <- c(0, 10, 20, 50, 100, 200, 500, 1000, Inf)
+pal <- colorBin("YlOrRd", domain = geo$medPrice, 
+                bins = quantile(geo$medPrice,probs = c(0, 0.25, 0.5, 1), na.rm = TRUE))
+
+geo |> leaflet() |> 
+  addTiles() |> 
+  addPolygons(
+    fillColor = ~pal(medPrice),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7
+  )
+
+```
+

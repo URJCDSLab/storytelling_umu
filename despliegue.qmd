@@ -1,0 +1,15 @@
+---
+title: "Despliegue en producción"
+---
+
+Como culminación del proyecto, cada estudiante (o grupo, si se hace en grupo) podrá
+publicar su aplicación en el servicio cloud de Posit. Hay otras opciones para
+desplegar aplicaciones, pero esta es la más sencilla.
+
+1. Crea una cuenta en <https://www.shinyapps.io>
+2. Desde el script `app.R`, haz clic en el icono _Publish_ (arriba a la derecha).
+3. Sigue las instrucciones para configurar la cuenta de shinyapps.io en RStudio.
+4. Puede que te pida instalar algunos paquetes adicionales, acepta.
+5. RStudio subirá la aplicación con todos los ficheros que necesite a shinyapps.io,
+y cuando termine, tendrás la aplicación publicada para presumir de ella.
+

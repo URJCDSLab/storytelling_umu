@@ -1,0 +1,122 @@
+---
+title: "Aplicaciones analíticas del márketing"
+subtitle: "Máster Universitario en Marketing Digital y Analítico"
+---
+## Objetivo
+
+El objetivo de estas sesiones es realizar un caso práctico de principio a fin
+que cubra muchos de los aspectos estudiados en el Máster, como tratamiento de
+datos, visualización, o modelización. El caso práctico se acercará mucho al
+despliegue real que se realiza en las empresas, llegando a un producto 
+completamente utilizable.
+
+Las sesiones son eminentemente prácticas, y cubren los siguientes apartados de la
+asignatura "Aplicaciones analíticas del márketing":
+
+* 1.3 Screening de productos y servicios
+* 1.4 Estudio de marca
+
+## Metodología
+
+La metodología a utilizar es el Aprendizaje Basado en Proyectos. A partir
+de un conjunto de datos, se propondrán una serie de objetivos a cumplir por el
+equipo de Márketing Digital y Analítico, que incluyan el tratamiento de datos, 
+su visualización, y la aplicación de modelos de aprendizaje estadístico. 
+El producto final quedará desplegado "en producción" en un servicio gratuito
+de alojamiento de aplicaciones.
+Para ello se utilizará el software estadístico y lenguaje de programación R.
+Como marco metodológico se seguirán las típicas fases de CRISP-DM.
+
+La @fig-crisp esquematiza las seis fases de la metodología CRISP-DM: Comprensión del negocio, Comprensión de los datos, Preparación de los datos, Modelización, Evaluación e Implementación. El proceso no tiene por qué ser lineal, las fases pueden retroalimentarse para mejorar el resultado final
+
+![Fases metodología CRISP-DM](img/crisp-dm-es.png){#fig-crisp width=500}
+
+La metodología CRISP-DM (Cross-Industry Standard Process for Data Mining) es una estructura ampliamente utilizada para el desarrollo de proyectos de minería de datos. Se compone de seis fases principales, que no necesariamente se siguen de manera secuencial, ya que el proceso es iterativo. A continuación, se describen brevemente estas fases:
+
+1. **Comprensión del negocio (Business Understanding)**:
+   - **Objetivo**: Entender los objetivos y requisitos del negocio desde una perspectiva de negocio.
+   - **Actividades**: Determinar los objetivos del proyecto, evaluar la situación actual, definir los objetivos de minería de datos, y planificar un proyecto.
+
+2. **Comprensión de los datos (Data Understanding)**:
+   - **Objetivo**: Familiarizarse con los datos disponibles y determinar su calidad.
+   - **Actividades**: Recolección de datos inicial, descripción de datos, exploración de datos, y verificación de la calidad de los datos.
+
+3. **Preparación de los datos (Data Preparation)**:
+   - **Objetivo**: Preparar el conjunto de datos final que se utilizará en la modelación.
+   - **Actividades**: Selección de los datos, limpieza de datos, construcción de datos (derivación de atributos), integración de datos y formateo de datos.
+
+4. **Modelado (Modeling)**:
+   - **Objetivo**: Seleccionar y aplicar técnicas de modelado y calibrar sus parámetros para valores óptimos.
+   - **Actividades**: Selección de la técnica de modelado, generación del diseño de prueba, construcción del modelo, y evaluación del modelo.
+
+5. **Evaluación (Evaluation)**:
+   - **Objetivo**: Evaluar los modelos construidos para asegurar que cumplen con los objetivos del negocio.
+   - **Actividades**: Evaluación de resultados, revisión del proceso, y determinación de los próximos pasos.
+
+6. **Despliegue (Deployment)**:
+   - **Objetivo**: Implementar el modelo en un entorno operativo.
+   - **Actividades**: Planificación del despliegue, monitoreo y mantenimiento del modelo, generación del reporte final, y revisión del proyecto.
+
+Estas fases proporcionan un marco estructurado para abordar problemas de minería de datos de manera sistemática, asegurando que los resultados obtenidos sean útiles y alineados con los objetivos del negocio.
+
+
+## Desarrollo de las sesiones
+
+Se plantean dos sesiones de unas 4 horas, divididas cada una en dos partes, con un
+descanso entre cada parte. En cada parte, se comienza con una breve presentación 
+de lo que se va a hacer y los conceptos clave. Después, los estudiantes 
+realizan las actividades propuestas en un guión para conseguir el resultado de
+cada parte.
+
+- **Sesión 1**
+  - Primera parte: Bases de datos. Creación de base de datos local. Conexión a
+  base de datos remota. Lectura de datos de las bases de datos.
+  - Segunda parte: ETL. Descarga de datos. Transformación de datos. Carga de datos en base de datos.
+  
+- **Sesión 2**
+  - Primera parte: Prototipo Shiny Dashboard. Creación del interfaz de usuario (UI). Outputs básicos del Dashboard.
+  - Segunda parte: Shiny Dashboard en producción. Incorporación de modelos de aprendizaje estadístico. Despliegue en la nube.
+
+
+## Requisitos previos
+
+Los estudiantes deben ser capaces de trabajar con proyectos de RStudio y
+manejar con cierta soltura R (creación de scripts, ejecución de código, 
+uso de funciones de gráficos y modelización, etc). Para la parte de despliegue
+deben tener una cuenta (gratuita) en [shinyapps.io](https://www.shinyapps.io)
+
+
+## Datos
+
+Utilizaremos las siguientes bases de datos de la plataforma Kaggle:
+
+* [Wine tasting](https://www.kaggle.com/datasets/mysarahmadbhat/wine-tasting)
+
+* [Wine dataset](https://www.kaggle.com/datasets/gcspkmdr/wine-dataset)
+
+* [Wine Reviews](https://www.kaggle.com/datasets/zynicide/wine-reviews?select=winemag-data-130k-v2.csv)
+
+
+Estos conjunto de datos contienen datos multidimensionales del sector del vino, incluyendo datos geográficos y variables tanto cualitativas como cuantitativas.
+
+Se anima a los estudiantes aplicar lo aprendido después a cualquier otro conjunto de datos
+de su interés (por ejemplo del que vayan a hacer su TFM, o de su trabajo o aficiones).
+
+
+## Ejemplos aplicaciones shiny
+
+- [EnvyRState](https://elcano.shinyapps.io/EnvyRState/)
+
+- [Atlas renta hogares](https://lcano.shinyapps.io/atlas_renta_hogares/)
+
+- Ver más en [Shiny Gallery](https://shiny.posit.co/r/gallery/)
+
+## Libro "Fundamentos de Ciencia de Datos con R"
+
+En este libro, disponible en abierto en el siguiente enlace, se tratan muchos temas relacionados con los contenidos de este material:
+
+<https://cdr-book.github.io>
+
+
+añadir http://www.feat.engineering/text-data
+

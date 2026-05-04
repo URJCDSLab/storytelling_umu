@@ -1,0 +1,38 @@
+project:
+  type: website
+  render:
+    - "*.qmd"
+    - "!duckdb/"
+    - "!datos/"
+    - "!app/"
+
+lang: "es"
+website:
+  title: "Storytelling para Marketing"
+  page-footer: "Copyright 2024, Emilio López Cano"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Bienvenida
+      - href: db.qmd
+        text: Bases de datos
+      - href: etl.qmd
+        text: Procesos ETL
+      - href: shiny.qmd
+        text: Shiny dashboards
+      - href: despliegue.qmd
+        text: Despliegue en producción
+        
+      - href: about.qmd
+        text: Profesor
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+
+exclude:
+  - "._*"
+
+

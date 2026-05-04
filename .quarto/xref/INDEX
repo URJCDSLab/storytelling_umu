@@ -1,0 +1,23 @@
+{
+  "about.qmd": {
+    "about.html": "4de0abba"
+  },
+  "db.qmd": {
+    "db.html": "982e6393"
+  },
+  "despliegue.qmd": {
+    "despliegue.html": "dfa2e942"
+  },
+  "etl.qmd": {
+    "etl.html": "fb3affd8"
+  },
+  "fixes.qmd": {
+    "fixes.html": "37fd4004"
+  },
+  "index.qmd": {
+    "index.html": "7f03a82c"
+  },
+  "shiny.qmd": {
+    "shiny.html": "d65f70de"
+  }
+}

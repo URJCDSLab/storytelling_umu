@@ -1,0 +1,338 @@
+---
+title: "Procesos ETL"
+---
+
+En los procesos empresariales, generalmente hay que realizar este tipo de tareas
+con los datos antes de poder utilizarlos. En el proyecto se obtendrán datos de
+fuentes abiertas (Extract), se transformarán los datos de forma adecuada (Transform), y se 
+cargarán en el "servidor" local de base de datos (Load).
+
+Vamos a seguir los ejemplos y explicaciones de algunos capítulos del libro [R for Data Science 2nd ed](https://r4ds.hadley.nz):
+
+- [Capítulo 7 Data Import](https://r4ds.hadley.nz/data-import)
+- [Capítulos 12-19 Transform](https://r4ds.hadley.nz/transform)
+
+
+## Extract
+
+En este paso de los procesos ETL normalmente se obtienen los datos "brutos",
+que se pueden guardar en _data lakes_, para ser tratados después.
+
+En nuestro proyecto el proceso de descarga es manual: vamos a Kaggle, nos identificamos
+y descargamos los archivos de datos en una carpeta de nuestro proyecto, por ejemplo `datos`.
+
+:::{.callout-warning}
+Descarga los archivos de datos de Kaggle que se indican en la página de bienvenida
+y guárdalos en la carpeta `datos` del proyecto.
+:::
+
+
+Esisten multitud de formas de obtener los datos de forma automatizada. Webscrapping
+es un conjunto de técnicas para automatizar la obtención de datos desde la web.
+[Ver el capítulo de R for Data science](https://r4ds.hadley.nz/webscraping.html).
+La documentación del paquete {rvest} también es bastante completa <https://rvest.tidyverse.org>.
+
+Cuando los ficheros están en rutas conocidas, pero que dependen de algún valor, se pueden utilizar bucles y las funciones de gestión de ficheros
+para descargar estos datos de forma automatizada. Esto sería un ejemplo
+si tuviéramos en un servidor archivos con el año y el mes en el nombre.
+
+```{r}
+#| eval: false
+anios <- c(2020, 2021)
+meses <- c("01", "02", "03", "04", "05", 
+           "06", "07", "08", "09", "10", "11", "12")
+
+for(a in anios){
+  for(m in meses){
+    download.file(paste0("http://www.xxxxx/", a, "-", m, ".csv"),
+                  destfile = paste0("datos/", a, "-", m, ".csv"))
+  }
+
+}
+```
+
+
+
+Para transformar los datos con R, primero tenemos que cargarlos en memoria, para
+después poder manipularlos. 
+
+:::{.callout-warning}
+Como tenemos un archivo csv, importamos de texto.
+:::
+
+```{r}
+library(readr)
+winetasting <- read_csv("datos/winemag-data-130k-v2.csv")
+```
+
+
+
+## Transform
+
+Hay múltiples operaciones de transformación. Vamos a practicar con
+algunas de ellas. Muchas veces se habla de _feature engineering_ sobre todo
+cuando la transformación va dirigida a la creación de modelos estadísticos.
+
+vamos a trabajar con los datos de vinos de España y Portugal, `vinos_ib`. Si no lo tenemos en memoria, podemos obtenerlo de la base de datos:
+
+```{r}
+#| include: false
+library(dplyr)
+vinos_ib <- winetasting |> 
+  filter(country %in% c("Spain", "Portugal"))
+```
+
+
+```{r}
+#| eval: false
+library(dplyr)
+con <- DBI::dbConnect(
+  duckdb::duckdb(),
+  dbdir = "duckdb/wine.db"
+)
+vinos_ib <- tbl(con, "tasting") |> 
+  filter(country %in% c("Spain", "Portugal")) |> 
+  collect()
+```
+
+
+```{r}
+library(dplyr)
+glimpse(vinos_ib)
+```
+
+`glimpse()` es el equivalente a `str()` de R base, pero en formato tabla con una representación más compacta.
+
+
+
+
+- Limpiar nombres de columnas (ver ejemplos paquete {janitor}).
+
+Ver el efecto que produce cada ejemplo siguiente en el data.frame.
+
+```{r}
+# R base
+colnames(vinos_ib)
+
+# cambia winery por nombre bodega
+colnames(vinos_ib)[14] <- "nombre bodega"
+colnames(vinos_ib)
+
+head(vinos_ib$`nombre bodega`)
+
+# cambiar nombre bodega por bodega
+vinos_ib <- vinos_ib |> 
+  rename(bodega = "nombre bodega")
+
+vinos_ib <- vinos_ib |> 
+  rename(`nombre bodega` = "bodega")
+
+```
+
+
+- Comprobar y cambiar tipo de datos si procede.
+
+Ejemplos del libro R for Data Science para corregir errores de datos
+
+```{r}
+students <- read_csv("https://pos.it/r4ds-students-csv")
+
+students <- students |> janitor::clean_names()
+
+
+## Arreglar datos erróneos
+students |> 
+  count(age)
+
+students <- students |> 
+  mutate(edad = as.numeric(
+    ifelse(age == "five", 
+           5, age)))
+
+students <- students |> 
+  mutate(edad = as.numeric(
+    case_when(age == "five" ~ "5", 
+              age == "four" ~ "4",
+              .default = age)))
+
+students <- students |> 
+  mutate(edad = as.numeric(
+    ifelse(age == "five", 
+           5, age)))
+```
+
+
+Para trabajar con factores, el paquete {forcats} del _tidyverse_ tiene una colección de funciones muy útiles, se recomienda ver la documentación y los ejemplos en el [capítulo Factors](https://r4ds.hadley.nz/factors) de R for data Science.
+
+Ejemplos para transformar factores en la tabla de vinos:
+
+```{r}
+vinos_ib |> 
+  count(variety) |> 
+  arrange(n) 
+```
+
+
+Reducción del nuúmero de categorías creando "otros":
+```{r}
+library(forcats)
+vinos_ib |> 
+  mutate(variedad = fct_lump_min(variety, 
+                                 min = 80,
+                                 other_level = "Otros")) |> 
+  count(variedad)
+  
+vinos_ib |> 
+  mutate(variedad = fct_lump_lowfreq(variety, 
+                                 other_level = "Otros")) |> 
+  count(variedad)
+```
+
+- Calcular nuevas columnas
+
+Transformación de variables numéricas. 
+
+```{r}
+vinos_ib <- vinos_ib |> 
+  mutate(precio = price*0.92)
+```
+
+- Transformar columnas (logaritmo, tipificar, ...)
+
+
+Transformación logarítmica, observa el cambio:
+
+```{r}
+library(ggplot2)
+vinos_ib |> 
+  ggplot(aes(price)) + 
+  geom_histogram()
+
+vinos_ib <- vinos_ib |> 
+  mutate(logPrecio = log(price, base = 10))
+
+vinos_ib |> 
+  ggplot(aes(logPrecio)) + 
+  geom_histogram()
+```
+
+Tipificación:
+
+```{r}
+vinos_ib |> 
+  slice_max(price, n = 5)
+
+vinos_ib |> 
+  mutate(scaled_price = scale(price),
+         .after = price) 
+
+```
+
+
+
+
+Ordenar las columnas:
+
+```{r}
+vinos_ib <- vinos_ib |> relocate(precio,
+                     .after = price)
+```
+
+
+
+
+
+- Tratamiento de valores perdidos
+
+```{r}
+vinos_ib |> 
+  filter(is.na(price)) 
+
+library(tidyr)
+vinos_ib |> 
+  filter(is.na(taster_name))
+
+vinos_ib |> 
+  fill(taster_name)
+
+vinos_ib |> 
+  replace_na(list(taster_name = "DESCONOCIDO",
+                  price = median(vinos_ib$price)))
+
+vinos_ib |> 
+  select(variety, price)
+
+vinos_ib <- vinos_ib |> 
+  select(-region_2)
+
+vinos_ib |> 
+  drop_na(everything())
+
+vinos_ib |> 
+  drop_na(points, price)
+```
+
+
+- Tratamiento de outliers
+
+Básicamente igual que los valores perdidos, pero se puede analizar más.
+
+- Unión de tablas
+
+- Apilar y desapilar columnas
+
+- Agrupar y resumir
+
+```{r}
+vinos_ib |> 
+  drop_na(points, price) |> 
+  group_by(country) |> 
+  summarise(precio_medio = mean(price))
+```
+
+
+- Operaciones con fechas
+
+Para operaciones con fechas, ver la documentación del paquete {lubridate} del tidyverse <https://lubridate.tidyverse.org>.
+
+
+- Operaciones con textos
+
+Para manipulación de cadenas de caracteres, ver la documentación del paquete {stringr} del _tidyverse_ <https://stringr.tidyverse.org>. Con la función `paste()` de R base ya se pueden hacer muchas cosas. El capítulo [Strings de R for data Science es el mejor sitio para aprender](https://r4ds.hadley.nz/strings.html).
+
+- Eliminar Columnas constantes (_zero variance_), o con todos los valores NA.
+
+
+
+
+## Load
+
+La última parte del proceso ETL tiene que ver con la carga de datos "limpios" en el lugar desde el que van a ser "explotados". Tradicionalmente tablas en una base de datos relacional como la que hemos usado antes y ya hemos hecho una carga. Pero actualmente hay otras formas de organizar los _data warehouse_, por ejemplo con ficheros _parket_, o sistemas distribuidos como _Spark_.
+
+## Resumen
+
+Por supuesto, los procesos ETL (Extract, Transform, Load) son fundamentales en la integración y gestión de datos en sistemas de almacenamiento, como almacenes de datos (data warehouses). A continuación se describen brevemente las tres fases principales de los procesos ETL:
+
+1. **Extracción (Extract)**:
+   - **Objetivo**: Obtener datos de diversas fuentes, que pueden ser bases de datos, archivos, aplicaciones, APIs, etc.
+   - **Actividades**: 
+     - Conectar con las fuentes de datos.
+     - Extraer los datos necesarios, asegurando que se capturen todos los datos relevantes y se minimicen los impactos en las fuentes originales.
+
+2. **Transformación (Transform)**:
+   - **Objetivo**: Convertir los datos extraídos a un formato adecuado para el análisis y cargarlos en el almacén de datos.
+   - **Actividades**: 
+     - Limpieza de datos: Eliminar duplicados, manejar valores nulos, corregir errores.
+     - Estandarización: Convertir datos a formatos comunes.
+     - Enriquecimiento: Agregar datos adicionales que pueden ser útiles para el análisis.
+     - Agregación: Resumir datos para facilitar su análisis.
+     - Integración: Combinar datos de diferentes fuentes en un formato unificado.
+
+3. **Carga (Load)**:
+   - **Objetivo**: Importar los datos transformados en el sistema de destino, como un almacén de datos.
+   - **Actividades**: 
+     - Cargar datos en tablas del almacén de datos.
+     - Verificación de la integridad de los datos cargados.
+     - Optimización del rendimiento de la carga, asegurando que se minimicen los tiempos de inactividad y los impactos en los usuarios del sistema de destino.
+
+Estos procesos ETL aseguran que los datos sean accesibles, precisos y útiles para el análisis, facilitando la toma de decisiones basada en datos dentro de las organizaciones.
