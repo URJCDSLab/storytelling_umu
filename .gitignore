@@ -49,3 +49,4 @@ Dockerfile_arm
 Dockerfile_arm0
 
 _site
+.quarto
