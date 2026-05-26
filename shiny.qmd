@@ -16,6 +16,7 @@ library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
+library(tidyr)
 ```
 
 Cuando se aprende análisis de datos con R, se hace a través de scripts, utilizando
@@ -321,6 +322,7 @@ library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
+library(tidyr)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
@@ -402,6 +404,7 @@ library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
+library(tidyr)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
@@ -517,6 +520,7 @@ library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
+library(tidyr)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
@@ -613,4 +617,274 @@ shinyApp(ui, server)
 
 ## Extra: Incluir un mapa
 
-(próximamente)
+Añadimos una nueva pestaña con un mapa interactivo {leaflet} que muestra el
+**precio mediano** por país, leyendo los datos directamente de la base de datos.
+
+Los paquetes necesarios son {sf} para geometrías, {giscoR} para las fronteras
+mundiales y {leaflet} para el mapa interactivo.
+
+Los nombres de país del dataset de catas no coinciden exactamente con los de
+{giscoR}, así que creamos un vector de reasignación (`country_recode`) antes
+de hacer el join.
+
+El agregado por país (`group_by` + `summarise`) se ejecuta **en la base de
+datos** antes de `collect()`, de modo que solo se transfieren a R los ~45 países
+con datos, no las 130.000 filas.
+
+```{.r highlight-lines="10-12,24-42,57-59,80-96"}
+library(shiny)
+library(bslib)
+library(DBI)
+library(RSQLite)
+library(dbplyr)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(broom)
+library(tidyr)
+library(sf)
+library(giscoR)
+library(leaflet)
+
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
+
+# Nombres del dataset -> nombres de giscoR
+country_recode <- c(
+  "Czech Republic" = "Czechia",
+  "England"        = "United Kingdom",
+  "Macedonia"      = "North Macedonia",
+  "Turkey"         = "Türkiye",
+  "US"             = "United States"
+)
+
+# Agregado en la base de datos + join con geometrías (una sola vez al arrancar)
+countries_geo <- gisco_get_countries()
+
+geo_data <- wine |>
+  group_by(country) |>
+  summarise(
+    med_price  = median(price, na.rm = TRUE),
+    avg_points = mean(points,  na.rm = TRUE),
+    n_resenas  = n(),
+    .groups    = "drop"
+  ) |>
+  collect() |>
+  mutate(country_geo = recode(country, !!!country_recode)) |>
+  right_join(countries_geo |> select(NAME_ENGL, geometry),
+             by = c("country_geo" = "NAME_ENGL")) |>
+  st_as_sf()
+
+ui <- page_navbar(
+  theme = bs_theme(bootswatch = "cosmo"),
+  title = "El vino y yo",
+  sidebar = sidebar(title = "Menú lateral",
+                    selectizeInput("ipais",
+                                   label = "País",
+                                   choices = c(sort(top_countries), "Other")),
+                    checkboxInput("ilog", label = "Logaritmo"),
+                    selectizeInput("icolormodelo",
+                                   label = "Color puntos",
+                                   choices = c("fct_country", "fct_variety"))),
+  nav_panel("Exploración",
+            "Análisis por país",
+            plotOutput("ohistprecio")),
+  nav_panel("Mapa",
+            leafletOutput("omapa", height = "600px")),
+  nav_panel("Modelo de precio",
+            "Estimación del precio",
+            navset_card_underline(
+              title = "Modelización",
+              nav_panel("Gráfico de dispersión",
+                        plotOutput("odisp")),
+              nav_panel("Coeficientes",
+                        dataTableOutput("ocoeficientes")),
+              nav_panel("Análisis",
+                        verbatimTextOutput("oanalisis"))))
+)
+
+server <- function(input, output) {
+
+  modelo <- reactive({
+    wine |>
+      select(price, points, country, variety) |>
+      collect() |>
+      mutate(
+        y           = if (input$ilog) log(price, 10) else price,
+        fct_country = factor(lump(country, top_countries)),
+        fct_variety = factor(lump(variety, top_varieties))
+      ) |>
+      lm(y ~ points + fct_country + fct_variety, data = _)
+  })
+
+  output$ohistprecio <- renderPlot({
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
+    }
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$omapa <- renderLeaflet({
+    pal <- colorBin(
+      "YlOrRd",
+      domain   = geo_data$med_price,
+      bins     = quantile(geo_data$med_price, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE),
+      na.color = "#cccccc"
+    )
+
+    geo_data |>
+      leaflet() |>
+      addTiles() |>
+      addPolygons(
+        fillColor   = ~pal(med_price),
+        weight      = 1,
+        opacity     = 1,
+        color       = "white",
+        dashArray   = "3",
+        fillOpacity = 0.7,
+        label       = ~paste0(country, ": $", round(med_price, 1),
+                               " | ", round(avg_points, 1), " pts",
+                               " (", n_resenas, " reseñas)")
+      ) |>
+      addLegend(
+        pal      = pal,
+        values   = ~med_price,
+        title    = "Precio mediano ($)",
+        position = "bottomright"
+      )
+  })
+
+  output$odisp <- renderPlot({
+    col_raw <- sub("fct_", "", input$icolormodelo)
+    wine |>
+      select(points, price, all_of(col_raw)) |>
+      collect() |>
+      rename(color = 3) |>
+      mutate(
+        y     = if (input$ilog) log(price, 10) else price,
+        color = lump(color, if (col_raw == "country") top_countries else top_varieties)
+      ) |>
+      ggplot(aes(x = points, y = y, col = color)) +
+      geom_point(alpha = 0.3) +
+      labs(y = if (input$ilog) "log10(precio)" else "precio",
+           col = input$icolormodelo)
+  })
+
+  output$ocoeficientes <- renderDT({
+    datatable(tidy(modelo())) |>
+      formatRound(columns = 2:5, digits = 4)
+  })
+
+  output$oanalisis <- renderPrint({
+    summary(modelo())
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## Ejercicios del mapa
+
+:::{.callout-caution}
+
+## Ejercicio 1: Seleccionar variable del mapa
+
+Ahora mismo el mapa muestra siempre el precio mediano. Añade un desplegable
+en el menú lateral que permita elegir entre **precio mediano** y
+**número de reseñas**, y haz que el mapa cambie en consecuencia.
+
+**Pistas:**
+
+- Añade un `selectizeInput("imapavar", ...)` en el `sidebar`. Los valores
+  internos (`"med_price"`, `"n_resenas"`) deben coincidir con los nombres de
+  columna en `geo_data`.
+- En `renderLeaflet`, lee `input$imapavar` para saber qué columna usar. Puedes
+  extraer la columna con `geo_data[[input$imapavar]]` y guardarla en una
+  variable local.
+- El dominio de `colorBin` y los `values` de `addLegend` deben usar esa
+  variable, no `~med_price` directamente.
+- El título de la leyenda también debería cambiar. Un `if` sencillo es
+  suficiente.
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 2: Panel condicional
+
+Algunos controles del menú lateral solo tienen sentido en una pestaña concreta.
+Ocúltalos cuando el usuario esté en otra pestaña:
+
+- `imapavar` solo debe aparecer en la pestaña **Mapa**.
+- `icolormodelo` solo debe aparecer en la pestaña **Modelo de precio**.
+
+**Pistas:**
+
+- `conditionalPanel(condition = "...", ...)` envuelve el input que quieres
+  mostrar u ocultar. La condición es JavaScript.
+- Para saber en qué pestaña está el usuario, `page_navbar` puede exponer su
+  pestaña activa como un input si le das un `id`. Añade `id = "nav"` al
+  `page_navbar`.
+- La condición JavaScript que comprueba la pestaña activa tiene la forma
+  `"input.nav === 'Mapa'"`. El valor que se compara es exactamente el `title`
+  del `nav_panel`.
+- Aplica el mismo patrón para `icolormodelo`, cambiando el nombre de la
+  pestaña en la condición.
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 3: Tooltip dinámico
+
+El tooltip que aparece al pasar el ratón sobre un país siempre muestra precio
+y reseñas. Modifícalo para que **destaque la variable seleccionada**: cuando
+se elige precio mediano el tooltip empieza por el precio; cuando se elige
+número de reseñas empieza por ese dato.
+
+**Pistas:**
+
+- El argumento `label` de `addPolygons` acepta un vector de texto, no solo
+  una fórmula. Puedes construirlo con `paste0()` antes de llamar a `leaflet`.
+- Usa `input$imapavar` dentro del `renderLeaflet` para decidir qué texto
+  construir. Un `if / else` con dos `paste0()` distintos es suficiente.
+- Recuerda que `label` espera un vector con tantos elementos como filas tiene
+  `geo_data`. `geo_data$country`, `geo_data$med_price`, etc. son vectores
+  normales dentro del `renderLeaflet`.
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 4: Tabla resumen en la pestaña Mapa
+
+Añade una tabla debajo del mapa (en la misma pestaña) que muestre los datos
+agregados por país: país, precio mediano, puntuación media y número de reseñas.
+La tabla debe ordenarse por la variable seleccionada en `imapavar`.
+
+**Pistas:**
+
+- En el `nav_panel("Mapa", ...)` puedes poner varios elementos, no solo el
+  mapa. Añade un `dataTableOutput("otablamapa")` debajo del `leafletOutput`.
+- En `server`, añade un `output$otablamapa <- renderDT({...})`. Dentro, toma
+  `geo_data`, elimina la columna de geometría con `st_drop_geometry()`,
+  selecciona las columnas de interés y ordena con `arrange(desc(...))` según
+  `input$imapavar`.
+- Para ordenar dinámicamente por una columna cuyo nombre está en una variable,
+  usa `arrange(desc(.data[[input$imapavar]]))`.
+
+:::
+

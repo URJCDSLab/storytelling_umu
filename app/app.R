@@ -7,6 +7,10 @@ library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
+library(tidyr)
+library(sf)
+library(giscoR)
+library(leaflet)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
@@ -25,7 +29,34 @@ lump <- function(x, top) if_else(x %in% top, x, "Other")
 paises  <- c(sort(top_countries), "Other")
 colores <- c("fct_country", "fct_variety")
 
+# Country name harmonisation: DB name -> giscoR NAME_ENGL
+country_recode <- c(
+  "Czech Republic" = "Czechia",
+  "England"        = "United Kingdom",
+  "Macedonia"      = "North Macedonia",
+  "Turkey"         = "Türkiye",
+  "US"             = "United States"
+)
+
+# Build geo data once at startup
+countries_geo <- gisco_get_countries()
+
+geo_data <- wine |>
+  group_by(country) |>
+  summarise(
+    med_price  = median(price, na.rm = TRUE),
+    avg_points = mean(points,  na.rm = TRUE),
+    n_resenas  = n(),
+    .groups    = "drop"
+  ) |>
+  collect() |>
+  mutate(country_geo = recode(country, !!!country_recode)) |>
+  right_join(countries_geo |> select(NAME_ENGL, geometry),
+             by = c("country_geo" = "NAME_ENGL")) |>
+  st_as_sf()
+
 ui <- page_navbar(
+  id    = "nav",                           # ejercicio 2: exponer pestaña activa
   theme = bs_theme(bootswatch = "cosmo"),
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
@@ -33,12 +64,27 @@ ui <- page_navbar(
                                    label = "País",
                                    choices = paises),
                     checkboxInput("ilog", label = "Logaritmo"),
-                    selectizeInput("icolormodelo",
-                                   label = "Color puntos",
-                                   choices = colores)),
+                    conditionalPanel(
+                      condition = "input.nav === 'Modelo de precio'",
+                      selectizeInput("icolormodelo",
+                                     label = "Color puntos",
+                                     choices = colores)
+                    ),
+                    # ejercicio 1: selector de variable del mapa
+                    # ejercicio 2: solo visible en la pestaña Mapa
+                    conditionalPanel(
+                      condition = "input.nav === 'Mapa'",
+                      selectizeInput("imapavar",
+                                     label   = "Mapa: variable",
+                                     choices = c("Precio mediano"    = "med_price",
+                                                 "Número de reseñas" = "n_resenas"))
+                    )),
   nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
+  nav_panel("Mapa",
+            leafletOutput("omapa", height = "500px"),
+            dataTableOutput("otablamapa")),  # ejercicio 4
   nav_panel("Modelo de precio",
             "Estimación del precio",
             navset_card_underline(
@@ -101,6 +147,63 @@ server <- function(input, output) {
       ggplot(aes(x = y)) +
       geom_histogram(bins = 15, col = "white", fill = "orange") +
       labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$omapa <- renderLeaflet({
+    var     <- input$imapavar
+    valores <- geo_data[[var]]
+    titulo  <- if (var == "med_price") "Precio mediano ($)" else "Nº reseñas"
+
+    pal <- colorBin(
+      "YlOrRd",
+      domain   = valores,
+      bins     = quantile(valores, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE),
+      na.color = "#cccccc"
+    )
+
+    # ejercicio 3: tooltip dinámico según variable seleccionada
+    etiqueta <- if (var == "med_price") {
+      paste0(geo_data$country, ": $", round(geo_data$med_price, 1),
+             " | ", round(geo_data$avg_points, 1), " pts",
+             " (", geo_data$n_resenas, " reseñas)")
+    } else {
+      paste0(geo_data$country, ": ", geo_data$n_resenas, " reseñas",
+             " | $", round(geo_data$med_price, 1),
+             " | ", round(geo_data$avg_points, 1), " pts")
+    }
+
+    geo_data |>
+      leaflet() |>
+      addTiles() |>
+      addPolygons(
+        fillColor   = pal(valores),
+        weight      = 1,
+        opacity     = 1,
+        color       = "white",
+        dashArray   = "3",
+        fillOpacity = 0.7,
+        label       = etiqueta
+      ) |>
+      addLegend(
+        pal      = pal,
+        values   = valores,
+        title    = titulo,
+        position = "bottomright"
+      )
+  })
+
+  # ejercicio 4: tabla resumen ordenada por variable seleccionada
+  output$otablamapa <- renderDT({
+    geo_data |>
+      st_drop_geometry() |>
+      drop_na(country) |>
+      select(country, med_price, avg_points, n_resenas) |>
+      arrange(desc(.data[[input$imapavar]])) |>
+      datatable(
+        colnames = c("País", "Precio mediano", "Puntuación media", "Nº reseñas"),
+        options  = list(pageLength = 10)
+      ) |>
+      formatRound(columns = c("med_price", "avg_points"), digits = 1)
   })
 
   output$odisp <- renderPlot({
