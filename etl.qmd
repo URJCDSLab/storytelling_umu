@@ -130,7 +130,7 @@ winetasting_raw <- list.files(
 ### Cargar los datos de Kaggle
 
 ```{r}
-winetasting <- read_csv("datos/winemag-data-130k-v2.csv")
+winetasting <- read_csv("datos/winemag-data-130k-v2.csv") |> rename(id = 1)
 ```
 
 ```{r}
