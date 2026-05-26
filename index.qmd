@@ -69,9 +69,8 @@ realizan las actividades propuestas en un guión para conseguir el resultado de
 cada parte.
 
 - **Sesión 1**
-  - Primera parte: Bases de datos. Creación de base de datos local. Conexión a
-  base de datos remota. Lectura de datos de las bases de datos.
-  - Segunda parte: ETL. Descarga de datos. Transformación de datos. Carga de datos en base de datos.
+  - Primera parte: ETL. Descarga de datos. Transformación de datos. Carga de ficheros limpios.
+  - Segunda parte: Bases de datos. Creación de base de datos local. Carga de tablas. Consultas SQL y con {dbplyr}.
   
 - **Sesión 2**
   - Primera parte: Prototipo Shiny Dashboard. Creación del interfaz de usuario (UI). Outputs básicos del Dashboard.
@@ -88,16 +87,13 @@ deben tener una cuenta (gratuita) en [shinyapps.io](https://www.shinyapps.io)
 
 ## Datos
 
-Utilizaremos las siguientes bases de datos de la plataforma Kaggle:
+Utilizaremos los siguientes conjuntos de datos:
 
-* [Wine tasting](https://www.kaggle.com/datasets/mysarahmadbhat/wine-tasting)
+* [Wine Reviews](https://www.kaggle.com/datasets/zynicide/wine-reviews?select=winemag-data-130k-v2.csv) (Kaggle) — ~130.000 reseñas de vinos de todo el mundo con puntuación, precio, variedad, bodega y catador.
 
-* [Wine dataset](https://www.kaggle.com/datasets/gcspkmdr/wine-dataset)
+* [Producción mundial de vino 1961–2023](https://ourworldindata.org/grapher/wine-production) (Our World in Data / FAO-OIV) — producción en toneladas por país y año. Se descarga directamente desde R.
 
-* [Wine Reviews](https://www.kaggle.com/datasets/zynicide/wine-reviews?select=winemag-data-130k-v2.csv)
-
-
-Estos conjunto de datos contienen datos multidimensionales del sector del vino, incluyendo datos geográficos y variables tanto cualitativas como cuantitativas.
+Estos conjuntos de datos contienen información multidimensional del sector del vino, incluyendo datos geográficos y variables tanto cualitativas como cuantitativas.
 
 Se anima a los estudiantes aplicar lo aprendido después a cualquier otro conjunto de datos
 de su interés (por ejemplo del que vayan a hacer su TFM, o de su trabajo o aficiones).
@@ -111,12 +107,9 @@ de su interés (por ejemplo del que vayan a hacer su TFM, o de su trabajo o afic
 
 - Ver más en [Shiny Gallery](https://shiny.posit.co/r/gallery/)
 
-## Libro "Fundamentos de Ciencia de Datos con R"
+## Lecturas recomendadas
 
-En este libro, disponible en abierto en el siguiente enlace, se tratan muchos temas relacionados con los contenidos de este material:
+* [Fundamentos de Ciencia de Datos con R](https://cdr-book.github.io) — libro en abierto que cubre muchos temas relacionados con los contenidos de este material.
 
-<https://cdr-book.github.io>
-
-
-añadir http://www.feat.engineering/text-data
+* [Feature Engineering and Selection](https://feat.engineering/) — libro de referencia sobre transformación y creación de variables para modelos predictivos.
 

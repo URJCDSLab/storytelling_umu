@@ -1,37 +1,38 @@
 ---
 title: "Bases de datos relacionales"
-knitr: 
-  opts_chunk: 
+knitr:
+  opts_chunk:
     eval: false
 ---
 
-Los datos en las empresas suelen estar 
+Los datos en las empresas suelen estar
 en estos sistemas gestores de bases de datos, que requieren unos datos de conexión
 y a partir de ahí, los datos se pueden extraer con expresiones SQL. En el proyecto
-se van a crear bases de datos "locales" para practicar su creación y modificación, y se 
+se van a crear bases de datos "locales" para practicar su creación y modificación, y se
 utilizará una base de datos remota para leer datos en tiempo real desde R (sin
 necesidad de conocer SQL).
 
-Vamos a seguir los ejemplos y explicaciones del [Capítulo 21 de R for Data Science 2nd ed.](https://r4ds.hadley.nz/databases), aplicándolos a nuestros conjuntos de 
+Vamos a seguir los ejemplos y explicaciones del [Capítulo 21 de R for Data Science 2nd ed.](https://r4ds.hadley.nz/databases), aplicándolos a nuestros conjuntos de
 datos de vino.
 
 ## Preparación
 
-:::{callout-caution}
-Crea un proyecto de RStudio vacío. Crea las carpetas `datos` y `duckdb`.
+:::{.callout-caution}
+Crea un proyecto de RStudio vacío. Crea las carpetas `datos` y `app/data`.
 :::
 
 ## Paquetes necesarios
 
-Paquetes básicos. Instálalos desde el panel _Packages_ de RStudio si no los tienes.
+Instálalos desde el panel _Packages_ de RStudio si no los tienes.
 
 ```{r}
+#| label: setup
 library(DBI)
+library(duckdb)
 library(dbplyr)
-library(tidyverse)
+library(dplyr)
+library(tidyr)
 ```
-
-También necesitaremos el paquete {duckdb}, instálalo si no lo tienes.
 
 ## Conexión a base de datos
 
@@ -39,15 +40,15 @@ Las conexiones a bases de datos siempre tienen esta forma, a través del paquete
 
 ```{r}
 #| eval: false
-con <- DBI::dbConnect(
-  RMariaDB::MariaDB(), 
-  username = "foo"
-)
-con <- DBI::dbConnect(
-  RPostgres::Postgres(), 
-  hostname = "databases.mycompany.com", 
-  port = 1234
-)
+# con <- DBI::dbConnect(
+#   RMariaDB::MariaDB(),
+#   username = "foo"
+# )
+# con <- DBI::dbConnect(
+#   RPostgres::Postgres(),
+#   hostname = "databases.mycompany.com",
+#   port = 1234
+# )
 ```
 
 Los detalles de la conexión dependerán mucho del escenario concreto en el que
@@ -55,12 +56,12 @@ estemos trabajando.
 
 ## Creación de base de datos
 
-
-
 ```{r}
+if (!dir.exists("app/data")) dir.create("app/data", recursive = TRUE)
+
 con <- DBI::dbConnect(
   duckdb::duckdb(),
-  dbdir = "duckdb/wine.db"
+  dbdir = "app/data/wine.db"
 )
 ```
 
@@ -68,129 +69,277 @@ con <- DBI::dbConnect(
 
 ## Practicar
 
-Vamos a saltar al apartado de ETL para descargar un conjunto de datos
-de los que usaremos en el resto de las actividades, de forma que los
-podamos guardar en nuestra base de datos para los ejemplos. Cuando tengamos
-en el envorinment el data frame `winetasting`, seguimos.
+Esta sección asume que ya has completado la sesión de **Procesos ETL**, que
+genera los ficheros limpios en `datos/clean/`. Si aún no lo has hecho, ve
+primero a esa sección y ejecuta el código hasta el final.
 :::
 
 Antes de empezar, vemos que no hay ninguna tabla:
 
-
 ```{r}
 dbListTables(con)
 ```
 
+## Esquema relacional: múltiples tablas
 
-Cargamos los datos en nuestra base de datos:
+En un sistema real los datos raramente están en una sola tabla. Lo habitual es
+tener un **esquema normalizado**: tablas pequeñas de referencia enlazadas mediante
+claves foráneas a la tabla principal.
+
+Vamos a descomponer los datos de catas en tres tablas:
+
+| Tabla | Contenido | Clave primaria |
+|-------|-----------|----------------|
+| `tasting` | Una fila por reseña | `id` |
+| `tasters` | Un catador por fila | `taster_name` |
+| `produccion` | Producción mundial por país y año | `pais + anio` |
+| `dos_espana` | Denominaciones de Origen españolas | `do` |
 
 ```{r}
-#| eval: false
-dbWriteTable(con, "tasting", winetasting)
+# Leer los ficheros limpios producidos por el ETL
+winetasting    <- readRDS("datos/clean/tasting.rds")
+produccion_vino <- readRDS("datos/clean/produccion_vino.rds")
+dos_espana     <- readRDS("datos/clean/dos_espana.rds")
+
+# Con parquet (alternativa, requiere {arrow}):
+# library(arrow)
+# winetasting     <- read_parquet("datos/clean/tasting.parquet")
+# produccion_vino <- read_parquet("datos/clean/produccion_vino.parquet")
+# dos_espana      <- read_parquet("datos/clean/dos_espana.parquet")
 ```
 
-Comprobamos que tenemos la nueva tabla.
-
 ```{r}
+# Tabla principal de reseñas
+dbWriteTable(con, "tasting", as.data.frame(winetasting), overwrite = TRUE)
+
+# Tabla de catadores únicos
+tasters <- winetasting |>
+  distinct(taster_name, taster_twitter_handle) |>
+  drop_na(taster_name)
+
+dbWriteTable(con, "tasters", as.data.frame(tasters), overwrite = TRUE)
+
+# Tabla de producción mundial (datos reales de Our World in Data / FAO)
+dbWriteTable(con, "produccion", as.data.frame(produccion_vino), overwrite = TRUE)
+
+# Tabla de DOs españolas
+dbWriteTable(con, "dos_espana", as.data.frame(dos_espana), overwrite = TRUE)
+
 dbListTables(con)
 ```
 
-Ahora podemos leer directamente de la base de datos. Las funciones de {DBI} "traen" a la memoria de R los datos. Si hay muchos datos, se colapsará.
-
+Comprobamos los campos de cada tabla:
 
 ```{r}
-con |> 
-  dbReadTable("tasting") |> 
+dbListFields(con, "tasting")
+dbListFields(con, "tasters")
+dbListFields(con, "produccion")
+dbListFields(con, "dos_espana")
+```
+
+## Lectura directa con {DBI}
+
+Las funciones de {DBI} "traen" a la memoria de R los datos. Si hay muchos datos, se colapsará.
+
+```{r}
+con |>
+  dbReadTable("tasting") |>
   as_tibble()
 ```
 
-Se pueden ejecutar expresiones SQL directamente si ya las tenemos (es habitual en las empresas que algún especialista en SQL la tenga ya desarrollada para la extracción de datos). En este ejemplo `dbSendQuery()` envía la consulta, pero no trae los datos. `dbFetch()` trae los datos a R. `dbGetQuery()` lo hace todo a la vez si tenemos claro que es lo que queremos.
+## Consultas SQL directas
+
+Se pueden ejecutar expresiones SQL directamente. En este ejemplo `dbGetQuery()`
+envía la consulta y trae los datos a R en un solo paso.
 
 ```{r}
-consulta <- "SELECT tasting.* FROM tasting WHERE (country = 'Spain')"
-dbSendQuery(con, statement = consulta) |> 
-  dbFetch()
-
+# Filtro simple
+consulta <- "SELECT * FROM tasting WHERE country = 'Spain'"
 dbGetQuery(con, consulta)
-
 ```
 
+### JOIN entre tablas
 
-## Trabajar en la base de datos desde R
+El poder real de las bases de datos relacionales está en los JOINs: combinar
+filas de distintas tablas usando una clave común.
 
-En vez de usar las funciones de {DBI}, podemos usar las de {dbplyr} y {dplyr}. La función `tbl()` crea un vínculo con la tabla de la base de 
+```{r}
+# INNER JOIN: reseñas con información del catador
+consulta_join <- "
+  SELECT t.id, t.title, t.points, t.price, t.country,
+         s.taster_name, s.taster_twitter_handle
+  FROM tasting AS t
+  INNER JOIN tasters AS s ON t.taster_name = s.taster_name
+  WHERE t.country = 'Spain'
+  ORDER BY t.points DESC
+  LIMIT 20
+"
+dbGetQuery(con, consulta_join)
+```
+
+```{r}
+# LEFT JOIN: reseñas ibéricas enriquecidas con producción del país en 2020
+consulta_prod <- "
+  SELECT t.id, t.country, t.points, t.price, t.variety,
+         p.produccion_toneladas
+  FROM tasting AS t
+  LEFT JOIN produccion AS p
+    ON t.country = p.pais AND p.anio = 2020
+  WHERE t.country IN ('Spain', 'Portugal')
+  ORDER BY p.produccion_toneladas DESC
+"
+dbGetQuery(con, consulta_prod)
+```
+
+:::{.callout-tip}
+Un **INNER JOIN** devuelve solo filas con coincidencia en ambas tablas.
+Un **LEFT JOIN** devuelve todas las filas de la tabla izquierda aunque no haya
+coincidencia en la derecha (los valores sin coincidencia aparecen como `NA`).
+:::
+
+## Trabajar en la base de datos desde R con {dbplyr}
+
+En vez de usar las funciones de {DBI}, podemos usar las de {dbplyr} y {dplyr}. La función `tbl()` crea un vínculo con la tabla de la base de
 datos, pero no la "trae" a la memoria de R. Así podemos explorar los datos antes de traer lo que nos interese con `collect()`.
 
-
-
 ```{r}
-winetbl <- tbl(con, "tasting")
-winetbl |> 
-  filter(country == "Spain")
+winetbl   <- tbl(con, "tasting")
+tasterbl  <- tbl(con, "tasters")
+prodbl    <- tbl(con, "produccion")
 ```
 
-Podemos ver la consulta SQL que se está haciendo a la base de datos:
+### Filtros y ordenación
 
 ```{r}
-winetbl |> 
-  filter(country == "Spain") |> 
-show_query()
-```
-
-
-Un poco de exploración de datos. Ordenar por puntuación descendente, y ver cómo sería con SQL:
-
-```{r}
-winetbl |> 
-  filter(country == "Spain") |> 
+winetbl |>
+  filter(country == "Spain") |>
   arrange(desc(points))
 ```
 
+Ver la consulta SQL equivalente que genera {dbplyr}:
+
 ```{r}
-winetbl |> 
-  filter(country == "Spain") |> 
-  arrange(desc(points)) |> 
+winetbl |>
+  filter(country == "Spain") |>
+  arrange(desc(points)) |>
   show_query()
 ```
 
+### JOIN con {dplyr} / {dbplyr}
 
-:::{callout-tip}
-Revisar más ejemplos de cómo se hace la conversión a SQL en el libro de Hadley.
-:::
+La sintaxis es idéntica a un `left_join()` normal de dplyr, pero se ejecuta
+en la base de datos:
+
+```{r}
+# Unir reseñas con datos del catador.
+# Eliminamos taster_twitter_handle de tasterbl antes del join para evitar
+# columnas duplicadas (ambas tablas la tienen). La columna del resultado
+# viene de winetbl.
+vinos_con_catador <- winetbl |>
+  left_join(tasterbl |> select(-taster_twitter_handle), by = "taster_name") |>
+  filter(country == "Spain") |>
+  select(title, points, price, taster_name, taster_twitter_handle)
+
+vinos_con_catador |> show_query()
+vinos_con_catador |> collect()
+```
+
+```{r}
+# Reseñas ibéricas enriquecidas con producción 2020
+vinos_produccion <- winetbl |>
+  filter(country %in% c("Spain", "Portugal")) |>
+  left_join(
+    prodbl |> filter(anio == 2020),
+    by = c("country" = "pais")
+  ) |>
+  select(country, title, points, price, produccion_toneladas) |>
+  arrange(desc(produccion_toneladas))
+
+vinos_produccion |> collect()
+```
+
+### Agrupación y resumen
+
+```{r}
+winetbl |>
+  filter(country %in% c("Spain", "Portugal")) |>
+  left_join(prodbl |> filter(anio == 2020), by = c("country" = "pais")) |>
+  group_by(country, produccion_toneladas) |>
+  summarise(
+    n_resenas    = n(),
+    puntos_medio = mean(points, na.rm = TRUE),
+    precio_medio = mean(price,  na.rm = TRUE),
+    .groups      = "drop"
+  ) |>
+  collect()
+```
 
 Para traer el resultado a R, función `collect()` (hasta entonces los datos solo están en la base de datos).
 
 ```{r}
-vinos_es <- winetbl |> 
-  filter(country == "Spain") |> 
+vinos_es <- winetbl |>
+  filter(country == "Spain") |>
   collect()
 ```
-
-
 
 :::{.callout-caution}
 
 ## Ejercicio
 
-Extrae los datos de las revisiones de vinos de España y Portugal y
-guardalos en un data.frame llamado vinos_ib.
+Extrae los datos de las revisiones de vinos de España y Portugal,
+únelos con la tabla de producción para el año 2019,
+y guárdalos en un data.frame llamado `vinos_ib`.
 
 :::
-
 
 :::{.callout-tip collapse="true"}
 
 ## Solución
 
 ```{r}
-vinos_ib <- winetbl |> 
-  filter(country %in% c("Spain", "Portugal")) |> 
+vinos_ib <- winetbl |>
+  filter(country %in% c("Spain", "Portugal")) |>
+  left_join(
+    prodbl |> filter(anio == 2019),
+    by = c("country" = "pais")
+  ) |>
   collect()
 ```
 
 :::
 
+:::{.callout-caution}
 
+## Ejercicio
+
+Usando la tabla `dos_espana`, obtén la **puntuación media por comunidad autónoma**
+para los vinos españoles. Ordena el resultado de mayor a menor puntuación.
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+```{r}
+dostbl <- tbl(con, "dos_espana")
+
+winetbl |>
+  filter(country == "Spain") |>
+  left_join(dostbl, by = c("region_1" = "do")) |>
+  filter(!is.na(comunidad)) |>
+  group_by(comunidad) |>
+  summarise(
+    n_resenas    = n(),
+    puntos_medio = mean(points, na.rm = TRUE),
+    precio_medio = mean(price,  na.rm = TRUE),
+    .groups      = "drop"
+  ) |>
+  arrange(desc(puntos_medio)) |>
+  collect()
+```
+
+:::
 
 ## Leer datos de un servidor remoto
 
@@ -232,4 +381,3 @@ dbListFields(con, "NOMBRETABLA")
 * Control de cambios con git y GitHub. Esto es obligado en cualquier entorno de ciencia de datos. [Happy Git and GitHub for the useR](https://happygitwithr.com).
 
 * Gestión de la configuración con {renv}. En entornos "en producción", imprescindible para que las aplicaciones sean estables en el tiempo. [Introduction to renv](https://rstudio.github.io/renv/articles/renv.html)
-

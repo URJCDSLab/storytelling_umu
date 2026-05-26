@@ -1,35 +1,48 @@
 ---
 title: "Shiny Dashboards"
-knitr: 
-  opts_chunk: 
+knitr:
+  opts_chunk:
     eval: false
 ---
 
+```{r}
+#| label: setup
+library(shiny)
+library(bslib)
+library(DBI)
+library(duckdb)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(broom)
+```
+
 Cuando se aprende análisis de datos con R, se hace a través de scripts, utilizando
-ciertas funciones y produciendo informes. Pero a menudo los informes no son suficientes, y los resultados se tienen que presentar de forma interactiva. En el proyecto se creará un _Dashbaoard_ profesional con capacidades analíticas en tiempo real. 
-Con interactividad del usuario y reactividad de la aplicación. Incluirá gráficos, tablas y mapas interactivos en base a los datos de las actividades anteriores.
+ciertas funciones y produciendo informes. Pero a menudo los informes no son suficientes, y los resultados se tienen que presentar de forma interactiva. En el proyecto se creará un _Dashboard_ profesional con capacidades analíticas en tiempo real.
+Con interactividad del usuario y reactividad de la aplicación. Incluirá gráficos, tablas y modelos en base a los datos de las actividades anteriores.
 
 Contexto: [Presentación en ENBIS 2023](https://www.lcano.com/p/enbis2023/)
 
-Material básico: [Paquete bslib](https://rstudio.github.io/bslib/articles/dashboards/index.html), paquete [leaflet](https://rstudio.github.io/leaflet/), paquete [gt](https://gt.rstudio.com),
-gráficos ggplot y plotly.
+Material básico: [Paquete bslib](https://rstudio.github.io/bslib/articles/dashboards/index.html), paquete [DT](https://rstudio.github.io/DT/), paquete [broom](https://broom.tidymodels.org).
 
 Material extendido: [Mastering Shiny](https://mastering-shiny.org)
 
 ## Preparación
 
-Se puede crear un proyecto desde cero para la aplicación. Pero no es necesario.
-Vamos a crear una carpeta `app` en nuestro proyecto, y ahí estará todo lo
-necesario para crearla y usarla.
+Vamos a crear una carpeta `app` en nuestro proyecto. Ahí estará todo lo
+necesario para crear y ejecutar la aplicación.
+
+:::{.callout-caution}
+Crea la carpeta `app` y dentro el archivo `app.R`.
+:::
 
 ## Estructura básica
 
-Las aplicaciones shiny tienen dos partes: el interfaz de usuario (ui) y 
-el código "reactivo", que produce los cambios en el ui que vemos (server).
+Las aplicaciones Shiny tienen dos partes: el interfaz de usuario (`ui`) y
+el código reactivo que produce los cambios que vemos (`server`).
 Es similar a lo que los informáticos llaman el _frontend_ y el _backend_.
 
-Creamos un archivo `app.R` con el siguiente contenido. Elige un título que te
-guste para tu app.
+Creamos un archivo `app.R` con el siguiente contenido:
 
 ```{r}
 library(shiny)
@@ -38,75 +51,53 @@ library(bslib)
 ui <- page_navbar(
   title = "Mi cuadro de mandos",
   sidebar = "Menú lateral",
-  nav_panel("Wine testing", "Área de contenido principal 1"),
-  nav_panel("Wine reviews", "Área de contenido principal 2")
-  
+  nav_panel("Exploración",    "Área de contenido 1"),
+  nav_panel("Modelo de precio", "Área de contenido 2")
 )
 
 shinyApp(ui, function(input, output) {})
 ```
 
-Iremos evolucionando esta estructura básica hasta tener una aplicación completa
-y atractiva. Aunque sea repetitivo, en cada ejemplo se incluye el código 
-completo de la app para ir viendo cómo evoluciona. Se puede ir pegando 
-en el archivo `app.R` para ir viendo los cambios. O también copiar el archivo `tasting.rds` en la carpeta del proyecto y ejecutar directamente los _chunks_.
+Iremos evolucionando esta estructura básica hasta tener una aplicación completa.
+En cada ejemplo se incluye el código completo de la app para ver cómo evoluciona.
 
 
-## Preparación de datos para la aplicación
+## Conexión a la base de datos
 
-Los datos de la aplicación deben ser accesibles desde la app para que sea reproducible al subir a algún servidor.
+Los datos deben estar accesibles desde la app para que sea reproducible al subir
+a un servidor. Usaremos la base de datos DuckDB creada en la sesión anterior,
+que ya está en `app/data/wine.db`.
 
-Si la base de datos estuviera alojada en la nube, podríamos hacer consultas a la base de datos en tiempo real.
+La conexión se hace igual que en la sesión de bases de datos. Usamos
+`read_only = TRUE` porque la app solo necesita leer — esto evita problemas
+si varios usuarios acceden a la vez.
 
-Para nuestro proyecto, como la base de datos está en local, vamos a crear
-archivos de datos .rds que guardaremos en la misma carpeta
-`app` que el script de la aplicación. Creamos un script `etl_app.R` en la carpeta del
-proyecto con el siguiente 
-contenido y lo ejecutamos:
+En lugar de traer toda la tabla con `collect()`, creamos una referencia
+lazy con `tbl()` y solo consultamos lo estrictamente necesario para cada elemento.
+Así evitamos cargar 130.000 filas en memoria al arrancar.
 
-```{r}
-library(readr)
-tasting <- read_csv("datos/winemag-data-130k-v2.csv")
-
-library(dplyr)
-library(forcats)
-
-tasting |> 
-  mutate(logPrice = log10(price),
-         fct_country = fct_lump_n(country, n = 20),
-         fct_winery = fct_lump_n(winery, n = 20),
-         fct_variety = fct_lump_n(variety, n = 20)) |> 
-  write_rds("app/tasting.rds")
-
-```
-
-
-
-Hacemos los datos disponibles para la aplicación. Creamos la función 
-server que enseguida llenaremos.
-
-
-
-```{r}
+```{.r highlight-lines="3-5,7-11"}
 library(shiny)
 library(bslib)
-library(readr)
+library(DBI)
+library(duckdb)
+library(dplyr)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+# Solo los países distintos para el desplegable — sin collect() completo
+paises <- wine |> distinct(country) |> pull(country)
 
 ui <- page_navbar(
-  title = "Mi cuadro de mandos",
+  title = "El vino y yo",
   sidebar = "Menú lateral",
-
-  nav_panel("Exploración", 
-            "Análisis por país"),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio")
-  
+  nav_panel("Exploración",     "Análisis por país"),
+  nav_panel("Modelo de precio", "Estimación del precio")
 )
 
 server <- function(input, output) {
-  
+
 }
 
 shinyApp(ui, server)
@@ -115,36 +106,43 @@ shinyApp(ui, server)
 
 ## Añadir inputs
 
-El `ui` de la aplicación tendrá elementos de entrada (_inputs_) que el usuario modifica,
-y elementos de salida (_outpus_) que la función `server` se ocupa de modificar
-de acuerdo con la interacción del usuario. Los inputs se añaden con funciones
-`xxxInput()`. El primer argumento siempre es el identificador que usaremos
-en `server` con la expresión `input$<identificador>`. Vamos a crear un input para seleccionar un país de forma que podamos
-hacer algo con los datos del país seleccionado.
+El `ui` tendrá elementos de entrada (_inputs_) que el usuario modifica,
+y elementos de salida (_outputs_) que `server` actualiza en respuesta.
+Los inputs se añaden con funciones `xxxInput()`. El primer argumento siempre
+es el identificador que usaremos en `server` como `input$<identificador>`.
 
+Para la agrupación por país, calculamos los 20 países más frecuentes en
+la base de datos y los usamos como opciones del desplegable. El resto se agrupa en "Other".
 
-```{r}
+```{.r highlight-lines="10-14,19-22"}
 library(shiny)
 library(bslib)
-library(readr)
+library(DBI)
+library(duckdb)
+library(dplyr)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country))),
-  nav_panel("Exploración", 
-            "Análisis por país"),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio")
-  
+                                   choices = c(sort(top_countries), "Other"))),
+  nav_panel("Exploración",     "Análisis por país"),
+  nav_panel("Modelo de precio", "Estimación del precio")
 )
 
 server <- function(input, output) {
-  
+
 }
 
 shinyApp(ui, server)
@@ -153,34 +151,40 @@ shinyApp(ui, server)
 
 ## Añadir outputs
 
-Ahora que tenemos un input y los datos, vamos a añadir un output donde poner 
-un histograma del precio del vino según el país seleccionado.
-Los outputs se añaden con funciones `xxxOutput()`.
+Añadimos un output donde mostrar el histograma del precio según el país seleccionado.
+Los outputs se añaden con funciones `xxxOutput()` en el `ui`.
 
-
-```{r}
+```{.r highlight-lines="23-25"}
 library(shiny)
 library(bslib)
-library(readr)
+library(DBI)
+library(duckdb)
+library(dplyr)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country))),
-  nav_panel("Exploración", 
+                                   choices = c(sort(top_countries), "Other"))),
+  nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio")
-  
+  nav_panel("Modelo de precio", "Estimación del precio")
 )
 
 server <- function(input, output) {
-  
+
 }
 
 shinyApp(ui, server)
@@ -189,42 +193,55 @@ shinyApp(ui, server)
 
 ## Añadir reactividad
 
-Ahora nos falta añadir la reactividad a `server` para mostrar el histograma y que
-cambie dependiendo del país seleccionado, haciendo un filtro. Esta reactividad
-se añade asignando a `output$<indentificador>` (el que hayamos creado en `ui`)
-el resultado de una función `renderXXX()`.
+Ahora añadimos la reactividad en `server`. Asignamos a `output$<identificador>`
+el resultado de una función `renderXXX()`. Dentro de esa función, cualquier
+referencia a `input$<algo>` hace que el output se recalcule automáticamente
+cuando el usuario cambia ese input.
 
-```{r}
+La consulta a la base de datos ocurre dentro del `renderPlot`, así que solo
+se ejecuta cuando cambia el país seleccionado.
+
+```{.r highlight-lines="6,30-41"}
 library(shiny)
 library(bslib)
-library(readr)
-library(ggplot2)
+library(DBI)
+library(duckdb)
 library(dplyr)
+library(ggplot2)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country))),
-  nav_panel("Exploración", 
+                                   choices = c(sort(top_countries), "Other"))),
+  nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio")
-  
+  nav_panel("Modelo de precio", "Estimación del precio")
 )
 
 server <- function(input, output) {
-    output$ohistprecio <- renderPlot({
-    tasting |> 
-      filter(fct_country == input$ipais) |> 
+  output$ohistprecio <- renderPlot({
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
+    }
+    q |> select(price) |> collect() |>
       ggplot(aes(x = price)) +
       geom_histogram(bins = 15, col = "white", fill = "orange")
   })
-
 }
 
 shinyApp(ui, server)
@@ -233,137 +250,175 @@ shinyApp(ui, server)
 
 ## Evoluciones
 
-Añadimos un nuevo input para seleccionar la variable precio original o transformada.
+Añadimos un input para mostrar el precio en escala logarítmica. La transformación
+se aplica después de `collect()`, en R, no en la base de datos.
 
-```{r}
+```{.r highlight-lines="24-24,38-43"}
 library(shiny)
 library(bslib)
-library(readr)
-library(ggplot2)
+library(DBI)
+library(duckdb)
 library(dplyr)
+library(ggplot2)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country)),
+                                   choices = c(sort(top_countries), "Other")),
                     checkboxInput("ilog", label = "Logaritmo")),
-  nav_panel("Exploración", 
+  nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio")
-  
-)
-
-server <- function(input, output) {
-    output$ohistprecio <- renderPlot({
-    tasting |> 
-      filter(fct_country == input$ipais) |> 
-      ggplot(aes_string(x = ifelse(input$ilog, "logPrice", "price"))) +
-      geom_histogram(bins = 15, col = "white", fill = "orange")
-  })
-
-}
-
-shinyApp(ui, server)
-```
-
-Añadimos un conjunto de pestañas en la segunda página para visualizar y crear un modelo.
-Se añade además una opción para cambiar el color de los puntos del gráfico 
-de dispersión según el país o la variedad (NOTA: no es una visualización muy efectiva en
-este caso, pero sirve a modo de ejemplo).
-
-```{r}
-library(shiny)
-library(bslib)
-library(readr)
-library(ggplot2)
-library(dplyr)
-
-tasting <- read_rds("tasting.rds")
-
-ui <- page_navbar(
-  title = "El vino y yo",
-  sidebar = sidebar(title = "Menú lateral",
-                    selectizeInput("ipais",
-                                   label = "País",
-                                   choices = unique(tasting$fct_country)),
-                    checkboxInput("ilog", label = "Logaritmo"),
-                    selectizeInput("icolormodelo",
-                                   label = "Color puntos",
-                                   choices = c("fct_country",
-                                               "fct_variety"))),
-  nav_panel("Exploración", 
-            "Análisis por país",
-            plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
-            "Estimación del precio",
-                        navset_card_underline(
-              title = "Modelización",
-              nav_panel("Gráfico de dispersión",
-                        plotOutput("odisp")),
-              nav_panel("Coeficientes",
-                        dataTableOutput("ocoeficientes"))
-            ))
-  
+  nav_panel("Modelo de precio", "Estimación del precio")
 )
 
 server <- function(input, output) {
   output$ohistprecio <- renderPlot({
-    tasting |> 
-      filter(fct_country == input$ipais) |> 
-      ggplot(aes_string(x = ifelse(input$ilog, "logPrice", "price"))) +
-      geom_histogram(bins = 15, col = "white", fill = "orange")
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
+    }
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
   })
-  output$odisp <- renderPlot({
-    tasting |>
-      ggplot(aes_string(y = ifelse(input$ilog, "logPrice", "price"),
-                        x = "points",
-                        col = input$icolormodelo)) +
-      geom_point()
-  })
-  
 }
 
 shinyApp(ui, server)
 ```
 
+Añadimos una segunda página con pestañas: gráfico de dispersión y tabla de coeficientes.
+Se añade también un input para cambiar el color de los puntos según país o variedad.
 
-Creamos un modelo que puede ser con la variable original o con la variable
-transformada, y se muestran los coeficientes en forma de tabla. Se añade también 
-un resumen realizado con el paquete {report}.
-
-```{r}
+```{.r highlight-lines="7-8,27-29,33-41,57-71"}
 library(shiny)
 library(bslib)
-library(readr)
-library(ggplot2)
+library(DBI)
+library(duckdb)
 library(dplyr)
+library(ggplot2)
 library(DT)
 library(broom)
-library(report)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   title = "El vino y yo",
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country)),
+                                   choices = c(sort(top_countries), "Other")),
                     checkboxInput("ilog", label = "Logaritmo"),
                     selectizeInput("icolormodelo",
                                    label = "Color puntos",
-                                   choices = c("fct_country",
-                                               "fct_variety"))),
-  nav_panel("Exploración", 
+                                   choices = c("fct_country", "fct_variety"))),
+  nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
+  nav_panel("Modelo de precio",
+            "Estimación del precio",
+            navset_card_underline(
+              title = "Modelización",
+              nav_panel("Gráfico de dispersión",
+                        plotOutput("odisp")),
+              nav_panel("Coeficientes",
+                        dataTableOutput("ocoeficientes"))))
+)
+
+server <- function(input, output) {
+  output$ohistprecio <- renderPlot({
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
+    }
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$odisp <- renderPlot({
+    col_raw <- sub("fct_", "", input$icolormodelo)
+    wine |>
+      select(points, price, all_of(col_raw)) |>
+      collect() |>
+      rename(color = 3) |>
+      mutate(
+        y     = if (input$ilog) log(price, 10) else price,
+        color = lump(color, if (col_raw == "country") top_countries else top_varieties)
+      ) |>
+      ggplot(aes(x = points, y = y, col = color)) +
+      geom_point(alpha = 0.3) +
+      labs(y = if (input$ilog) "log10(precio)" else "precio",
+           col = input$icolormodelo)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+Añadimos el modelo de regresión. Usamos `reactive()` para compartir el modelo
+entre la tabla de coeficientes y el resumen, evitando calcularlo dos veces.
+
+```{.r highlight-lines="47-57,88-95"}
+library(shiny)
+library(bslib)
+library(DBI)
+library(duckdb)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(broom)
+
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
+
+ui <- page_navbar(
+  title = "El vino y yo",
+  sidebar = sidebar(title = "Menú lateral",
+                    selectizeInput("ipais",
+                                   label = "País",
+                                   choices = c(sort(top_countries), "Other")),
+                    checkboxInput("ilog", label = "Logaritmo"),
+                    selectizeInput("icolormodelo",
+                                   label = "Color puntos",
+                                   choices = c("fct_country", "fct_variety"))),
+  nav_panel("Exploración",
+            "Análisis por país",
+            plotOutput("ohistprecio")),
+  nav_panel("Modelo de precio",
             "Estimación del precio",
             navset_card_underline(
               title = "Modelización",
@@ -372,38 +427,59 @@ ui <- page_navbar(
               nav_panel("Coeficientes",
                         dataTableOutput("ocoeficientes")),
               nav_panel("Análisis",
-                        uiOutput("oanalisis"))
-            ))
-  
+                        verbatimTextOutput("oanalisis"))))
 )
 
 server <- function(input, output) {
+
+  modelo <- reactive({
+    wine |>
+      select(price, points, country, variety) |>
+      collect() |>
+      mutate(
+        y           = if (input$ilog) log(price, 10) else price,
+        fct_country = factor(lump(country, top_countries)),
+        fct_variety = factor(lump(variety, top_varieties))
+      ) |>
+      lm(y ~ points + fct_country + fct_variety, data = _)
+  })
+
   output$ohistprecio <- renderPlot({
-    tasting |> 
-      filter(fct_country == input$ipais) |> 
-      ggplot(aes_string(x = ifelse(input$ilog, "logPrice", "price"))) +
-      geom_histogram(bins = 15, col = "white", fill = "orange")
-  })
-  output$odisp <- renderPlot({
-    tasting |>
-      ggplot(aes_string(y = ifelse(input$ilog, "logPrice", "price"),
-                        x = "points",
-                        col = input$icolormodelo)) +
-      geom_point()
-  })
-  output$ocoeficientes <- renderDT({
-    if(input$ilog){
-      f <- as.formula(paste0("logPrice ~ points + fct_country + fct_variety"))
-    } else{
-      f <- as.formula(paste0("price ~ points + fct_country + fct_variety"))
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
     }
-    modelo <- lm(f, data = tasting)
-    datatable(modelo |> tidy()) |> 
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$odisp <- renderPlot({
+    col_raw <- sub("fct_", "", input$icolormodelo)
+    wine |>
+      select(points, price, all_of(col_raw)) |>
+      collect() |>
+      rename(color = 3) |>
+      mutate(
+        y     = if (input$ilog) log(price, 10) else price,
+        color = lump(color, if (col_raw == "country") top_countries else top_varieties)
+      ) |>
+      ggplot(aes(x = points, y = y, col = color)) +
+      geom_point(alpha = 0.3) +
+      labs(y = if (input$ilog) "log10(precio)" else "precio",
+           col = input$icolormodelo)
+  })
+
+  output$ocoeficientes <- renderDT({
+    datatable(tidy(modelo())) |>
       formatRound(columns = 2:5, digits = 4)
   })
-  output$oanalisis <- renderText({
-    report(modelo) |> 
-      markdown()
+
+  output$oanalisis <- renderPrint({
+    summary(modelo())
   })
 }
 
@@ -413,29 +489,35 @@ shinyApp(ui, server)
 
 ## Añadir un tema
 
-La visualización por defecto es muy "sosa". Pero con {bslib} hay muchas opciones
-de personalización. La más inmediata para mejorar el aspecto gráfico es utilizar
-algún "tema" de los disponibles, que automáticamente cambia todos los elementos
-de la `ui`. Puedes ver los temas disponibles con esta aplicación de ejemplo (tienes que instalar el paquete {bsicons} y puede que te pida instalar algún paquete más adicional):
+La visualización por defecto es muy "sosa". Con {bslib} hay muchas opciones
+de personalización. La más inmediata es usar algún tema disponible, que cambia
+automáticamente todos los elementos del `ui`. Puedes explorar los temas con:
 
 ```{r}
 bs_theme_preview()
 ```
 
-Elige al que te guste para tu aplicación:
+Elige el que más te guste:
 
-
-```{r}
+```{.r highlight-lines="21"}
 library(shiny)
 library(bslib)
-library(readr)
-library(ggplot2)
+library(DBI)
+library(duckdb)
 library(dplyr)
+library(ggplot2)
 library(DT)
 library(broom)
-library(report)
 
-tasting <- read_rds("tasting.rds")
+con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
 
 ui <- page_navbar(
   theme = bs_theme(bootswatch = "cosmo"),
@@ -443,16 +525,15 @@ ui <- page_navbar(
   sidebar = sidebar(title = "Menú lateral",
                     selectizeInput("ipais",
                                    label = "País",
-                                   choices = unique(tasting$fct_country)),
+                                   choices = c(sort(top_countries), "Other")),
                     checkboxInput("ilog", label = "Logaritmo"),
                     selectizeInput("icolormodelo",
                                    label = "Color puntos",
-                                   choices = c("fct_country",
-                                               "fct_variety"))),
-  nav_panel("Exploración", 
+                                   choices = c("fct_country", "fct_variety"))),
+  nav_panel("Exploración",
             "Análisis por país",
             plotOutput("ohistprecio")),
-  nav_panel("Modelo de precio", 
+  nav_panel("Modelo de precio",
             "Estimación del precio",
             navset_card_underline(
               title = "Modelización",
@@ -461,38 +542,59 @@ ui <- page_navbar(
               nav_panel("Coeficientes",
                         dataTableOutput("ocoeficientes")),
               nav_panel("Análisis",
-                        uiOutput("oanalisis"))
-            ))
-  
+                        verbatimTextOutput("oanalisis"))))
 )
 
 server <- function(input, output) {
+
+  modelo <- reactive({
+    wine |>
+      select(price, points, country, variety) |>
+      collect() |>
+      mutate(
+        y           = if (input$ilog) log(price, 10) else price,
+        fct_country = factor(lump(country, top_countries)),
+        fct_variety = factor(lump(variety, top_varieties))
+      ) |>
+      lm(y ~ points + fct_country + fct_variety, data = _)
+  })
+
   output$ohistprecio <- renderPlot({
-    tasting |> 
-      filter(fct_country == input$ipais) |> 
-      ggplot(aes_string(x = ifelse(input$ilog, "logPrice", "price"))) +
-      geom_histogram(bins = 15, col = "white", fill = "orange")
-  })
-  output$odisp <- renderPlot({
-    tasting |>
-      ggplot(aes_string(y = ifelse(input$ilog, "logPrice", "price"),
-                        x = "points",
-                        col = input$icolormodelo)) +
-      geom_point()
-  })
-  output$ocoeficientes <- renderDT({
-    if(input$ilog){
-      f <- as.formula(paste0("logPrice ~ points + fct_country + fct_variety"))
-    } else{
-      f <- as.formula(paste0("price ~ points + fct_country + fct_variety"))
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
     }
-    modelo <- lm(f, data = tasting)
-    datatable(modelo |> tidy()) |> 
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$odisp <- renderPlot({
+    col_raw <- sub("fct_", "", input$icolormodelo)
+    wine |>
+      select(points, price, all_of(col_raw)) |>
+      collect() |>
+      rename(color = 3) |>
+      mutate(
+        y     = if (input$ilog) log(price, 10) else price,
+        color = lump(color, if (col_raw == "country") top_countries else top_varieties)
+      ) |>
+      ggplot(aes(x = points, y = y, col = color)) +
+      geom_point(alpha = 0.3) +
+      labs(y = if (input$ilog) "log10(precio)" else "precio",
+           col = input$icolormodelo)
+  })
+
+  output$ocoeficientes <- renderDT({
+    datatable(tidy(modelo())) |>
       formatRound(columns = 2:5, digits = 4)
   })
-  output$oanalisis <- renderText({
-    report(modelo) |> 
-      markdown()
+
+  output$oanalisis <- renderPrint({
+    summary(modelo())
   })
 }
 

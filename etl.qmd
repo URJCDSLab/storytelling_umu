@@ -2,9 +2,22 @@
 title: "Procesos ETL"
 ---
 
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(purrr)
+```
+
 En los procesos empresariales, generalmente hay que realizar este tipo de tareas
 con los datos antes de poder utilizarlos. En el proyecto se obtendrán datos de
-fuentes abiertas (Extract), se transformarán los datos de forma adecuada (Transform), y se 
+fuentes abiertas (Extract), se transformarán los datos de forma adecuada (Transform), y se
 cargarán en el "servidor" local de base de datos (Load).
 
 Vamos a seguir los ejemplos y explicaciones de algunos capítulos del libro [R for Data Science 2nd ed](https://r4ds.hadley.nz):
@@ -18,53 +31,113 @@ Vamos a seguir los ejemplos y explicaciones de algunos capítulos del libro [R f
 En este paso de los procesos ETL normalmente se obtienen los datos "brutos",
 que se pueden guardar en _data lakes_, para ser tratados después.
 
-En nuestro proyecto el proceso de descarga es manual: vamos a Kaggle, nos identificamos
-y descargamos los archivos de datos en una carpeta de nuestro proyecto, por ejemplo `datos`.
+### Descarga manual desde Kaggle
+
+La descarga desde Kaggle requiere autenticación, así que en este caso es manual:
+nos identificamos, descargamos los archivos en la carpeta `datos` del proyecto.
 
 :::{.callout-warning}
 Descarga los archivos de datos de Kaggle que se indican en la página de bienvenida
 y guárdalos en la carpeta `datos` del proyecto.
 :::
 
+### Descarga automatizada desde URLs abiertas
 
-Esisten multitud de formas de obtener los datos de forma automatizada. Webscrapping
-es un conjunto de técnicas para automatizar la obtención de datos desde la web.
-[Ver el capítulo de R for Data science](https://r4ds.hadley.nz/webscraping.html).
-La documentación del paquete {rvest} también es bastante completa <https://rvest.tidyverse.org>.
-
-Cuando los ficheros están en rutas conocidas, pero que dependen de algún valor, se pueden utilizar bucles y las funciones de gestión de ficheros
-para descargar estos datos de forma automatizada. Esto sería un ejemplo
-si tuviéramos en un servidor archivos con el año y el mes en el nombre.
+Cuando los datos están en una URL pública, se puede automatizar la descarga con
+`download.file()`, sin necesidad de intervención manual.
 
 ```{r}
 #| eval: false
-anios <- c(2020, 2021)
-meses <- c("01", "02", "03", "04", "05", 
-           "06", "07", "08", "09", "10", "11", "12")
+# Crear carpeta si no existe
+if (!dir.exists("datos")) dir.create("datos")
 
-for(a in anios){
-  for(m in meses){
-    download.file(paste0("http://www.xxxxx/", a, "-", m, ".csv"),
-                  destfile = paste0("datos/", a, "-", m, ".csv"))
+# Producción mundial de vino 1961-2023 (Our World in Data / FAO-OIV)
+url_produccion <- paste0(
+  "https://ourworldindata.org/grapher/wine-production.csv",
+  "?v=1&csvType=full&useColumnShortNames=false"
+)
+
+download.file(
+  url      = url_produccion,
+  destfile = "datos/produccion_vino.csv",
+  method   = "auto"
+)
+```
+
+```{r}
+#| eval: false
+produccion_raw <- read_csv("datos/produccion_vino.csv")
+```
+
+```{r}
+#| eval: false
+glimpse(produccion_raw)
+```
+`glimpse()` es el equivalente a `str()` de R base, pero en formato tabla con una representación más compacta.
+
+
+Descarga en bucle de múltiples ficheros con rutas predecibles. Los datos de
+reseñas de vino están particionados por año y mes en el repositorio del curso:
+
+```{r}
+#| eval: false
+base_url <- "https://raw.githubusercontent.com/usuario/repo/main/datos/raw/winemag"
+
+anios <- 1997:2016
+meses <- sprintf("%02d", 1:12)
+
+if (!dir.exists("datos/raw/winemag")) dir.create("datos/raw/winemag", recursive = TRUE)
+
+for (a in anios) {
+  for (m in meses) {
+    url      <- paste0(base_url, "/data-", a, "-", m, ".csv")
+    destfile <- paste0("datos/raw/winemag/data-", a, "-", m, ".csv")
+    download.file(url, destfile = destfile, quiet = TRUE)
   }
-
 }
 ```
 
-
-
-Para transformar los datos con R, primero tenemos que cargarlos en memoria, para
-después poder manipularlos. 
-
-:::{.callout-warning}
-Como tenemos un archivo csv, importamos de texto.
-:::
+Una vez descargados, podemos combinar todos los ficheros en un único data frame.
+La forma más explícita es con un bucle `for` y `bind_rows()`:
 
 ```{r}
-library(readr)
+#| eval: false
+ficheros <- list.files("datos/raw/winemag", pattern = "\\.csv$", full.names = TRUE)
+
+winetasting_raw <- data.frame()
+for (f in ficheros) {
+  chunk <- read_csv(f, show_col_types = FALSE)
+  winetasting_raw <- bind_rows(winetasting_raw, chunk)
+}
+```
+
+La misma operación con `purrr::map()` es más compacta y eficiente (evita
+copiar el data frame completo en cada iteración):
+
+```{r}
+#| eval: false
+winetasting_raw <- list.files(
+  "datos/raw/winemag",
+  pattern    = "\\.csv$",
+  full.names = TRUE
+) |>
+  map(read_csv, show_col_types = FALSE) |>
+  list_rbind()
+```
+
+### Cargar los datos de Kaggle
+
+```{r}
 winetasting <- read_csv("datos/winemag-data-130k-v2.csv")
 ```
 
+```{r}
+nrow(winetasting)
+```
+
+```{r}
+glimpse(winetasting)
+```
 
 
 ## Transform
@@ -73,40 +146,22 @@ Hay múltiples operaciones de transformación. Vamos a practicar con
 algunas de ellas. Muchas veces se habla de _feature engineering_ sobre todo
 cuando la transformación va dirigida a la creación de modelos estadísticos.
 
-vamos a trabajar con los datos de vinos de España y Portugal, `vinos_ib`. Si no lo tenemos en memoria, podemos obtenerlo de la base de datos:
-
 ```{r}
 #| include: false
-library(dplyr)
-vinos_ib <- winetasting |> 
+vinos_ib <- winetasting |>
   filter(country %in% c("Spain", "Portugal"))
 ```
 
-
 ```{r}
-#| eval: false
-library(dplyr)
-con <- DBI::dbConnect(
-  duckdb::duckdb(),
-  dbdir = "duckdb/wine.db"
-)
-vinos_ib <- tbl(con, "tasting") |> 
-  filter(country %in% c("Spain", "Portugal")) |> 
-  collect()
-```
-
-
-```{r}
-library(dplyr)
 glimpse(vinos_ib)
 ```
+Calculamos el porcentaje de registros que son de la península ibérica:
 
-`glimpse()` es el equivalente a `str()` de R base, pero en formato tabla con una representación más compacta.
+```{r}
+round(100 * nrow(vinos_ib) / nrow(winetasting), 2)
+```
 
-
-
-
-- Limpiar nombres de columnas (ver ejemplos paquete {janitor}).
+### Limpiar nombres de columnas
 
 Ver el efecto que produce cada ejemplo siguiente en el data.frame.
 
@@ -119,195 +174,417 @@ colnames(vinos_ib)[14] <- "nombre bodega"
 colnames(vinos_ib)
 
 head(vinos_ib$`nombre bodega`)
-
-# cambiar nombre bodega por bodega
-vinos_ib <- vinos_ib |> 
-  rename(bodega = "nombre bodega")
-
-vinos_ib <- vinos_ib |> 
-  rename(`nombre bodega` = "bodega")
-
 ```
 
+```{r}
 
-- Comprobar y cambiar tipo de datos si procede.
+# cambiar nombre bodega por bodega
+vinos_ib <- vinos_ib |>
+  rename(bodega = "nombre bodega")
 
-Ejemplos del libro R for Data Science para corregir errores de datos
+head(vinos_ib$`bodega`)
+```
+
+```{r}
+vinos_ib <- vinos_ib |>
+  rename(`nombre bodega` = "bodega")
+
+head(vinos_ib$`nombre bodega`)
+```
+
+### Comprobar y cambiar tipo de datos
+
+Ejemplos del libro R for Data Science para corregir errores de datos:
 
 ```{r}
 students <- read_csv("https://pos.it/r4ds-students-csv")
 
 students <- students |> janitor::clean_names()
 
-
-## Arreglar datos erróneos
-students |> 
+students |>
   count(age)
 
-students <- students |> 
+students <- students |>
   mutate(edad = as.numeric(
-    ifelse(age == "five", 
-           5, age)))
-
-students <- students |> 
-  mutate(edad = as.numeric(
-    case_when(age == "five" ~ "5", 
+    case_when(age == "five" ~ "5",
               age == "four" ~ "4",
               .default = age)))
-
-students <- students |> 
-  mutate(edad = as.numeric(
-    ifelse(age == "five", 
-           5, age)))
 ```
 
+### Extraer el año de cosecha con expresiones regulares
+
+El campo `title` contiene el año de la cosecha embebido en el texto, por ejemplo
+`"Nicosia 2013 Vulkà Bianco (Etna)"`. Con {stringr} y una expresión regular
+podemos extraerlo como variable numérica:
+
+```{r}
+vinos_ib <- vinos_ib |>
+  mutate(
+    cosecha = str_extract(title, "(19|20)[0-9]{2}") |> as.integer()
+  )
+
+vinos_ib |>
+  count(cosecha, sort = TRUE)
+```
+
+La expresión `(19|20)[0-9]{2}` captura cualquier secuencia de cuatro dígitos
+que empiece por `19` o `20`.
+
+```{r}
+vinos_ib |>
+  filter(!is.na(cosecha)) |>
+  ggplot(aes(x = cosecha)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Reseñas por año de cosecha",
+       x = "Año de cosecha", y = "Número de reseñas")
+```
+```{r}
+vinos_ib |>
+  filter(!is.na(cosecha)) |>
+  filter(cosecha > 2000) |>
+  ggplot(aes(x = cosecha)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Reseñas por año de cosecha",
+       x = "Año de cosecha", y = "Número de reseñas")
+```
+
+:::{.callout-caution}
+
+## Ejercicio
+
+Calcula la **antigüedad** de cada vino respecto al año actual
+y analiza si los vinos más antiguos tienen puntuaciones más altas. Pista, para calcular el año actual
+podéis utilizar `as.integer(format(Sys.Date(), "%Y"))`
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+```{r}
+vinos_ib <- vinos_ib |>
+  mutate(antiguedad = as.integer(format(Sys.Date(), "%Y")) - cosecha)
+
+vinos_ib |>
+  filter(!is.na(antiguedad), !is.na(points)) |>
+  group_by(antiguedad) |>
+  summarise(puntos_medio = mean(points), desviacion = sd(points), n = n()) |>
+  arrange(desc(antiguedad))
+```
+
+Otra posible forma de hacerlo es a través de una visualización.
+
+Con `geom_point()` hay demasiados puntos superpuestos para ver algo claro:
+
+```{r}
+vinos_ib |>
+  filter(!is.na(antiguedad), !is.na(points)) |>
+  ggplot(aes(x = antiguedad, y = points)) +
+  geom_point(alpha = 0.1) # Transparencia: donde hay más puntos se ve más oscuro
+```
+
+`geom_smooth()` muestra la tendencia sin el ruido individual:
+
+```{r}
+vinos_ib |>
+  filter(!is.na(antiguedad), !is.na(points)) |>
+  ggplot(aes(x = antiguedad, y = points)) +
+  geom_smooth() 
+  #+ scale_x_continuous(breaks = seq(min(vinos_ib$antiguedad, na.rm = TRUE), max(vinos_ib$antiguedad, na.rm=TRUE), by = 10)) # Probar una escala customizada
+```
+
+Un boxplot por año de cosecha (agrupado) muestra la distribución completa y los outliers:
+
+```{r}
+vinos_ib |>
+  filter(!is.na(cosecha), !is.na(points), cosecha >= 2000, cosecha <= 2010) |>
+  ggplot(aes(x = factor(cosecha), y = points)) +
+  geom_boxplot() +
+  labs(x = "Año de cosecha", y = "Puntuación") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+:::
+
+### Parsear y limpiar handles de Twitter
+
+```{r}
+vinos_ib |>
+  # Normalizar: minúsculas y eliminar el @ inicial para consistencia
+  mutate(twitter_clean = str_remove(taster_twitter_handle, "^@") |>
+           str_to_lower()) |>
+  count(twitter_clean, sort = TRUE)
+```
+
+### Transformar factores con {forcats}
 
 Para trabajar con factores, el paquete {forcats} del _tidyverse_ tiene una colección de funciones muy útiles, se recomienda ver la documentación y los ejemplos en el [capítulo Factors](https://r4ds.hadley.nz/factors) de R for data Science.
 
-Ejemplos para transformar factores en la tabla de vinos:
-
 ```{r}
-vinos_ib |> 
-  count(variety) |> 
-  arrange(n) 
+vinos_ib |>
+  count(variety) |>
+  arrange(n)
 ```
 
+Reducción del número de categorías creando "otros":
 
-Reducción del nuúmero de categorías creando "otros":
 ```{r}
-library(forcats)
-vinos_ib |> 
-  mutate(variedad = fct_lump_min(variety, 
+vinos_ib |>
+  mutate(variedad = fct_lump_min(variety,
                                  min = 80,
-                                 other_level = "Otros")) |> 
+                                 other_level = "Otros")) |>
   count(variedad)
-  
-vinos_ib |> 
-  mutate(variedad = fct_lump_lowfreq(variety, 
-                                 other_level = "Otros")) |> 
+
+vinos_ib |>
+  mutate(variedad = fct_lump_lowfreq(variety,
+                                 other_level = "Otros")) |>
   count(variedad)
 ```
 
-- Calcular nuevas columnas
+### Calcular nuevas columnas
 
-Transformación de variables numéricas. 
+Conversión de precio de dólares a euros:
 
 ```{r}
-vinos_ib <- vinos_ib |> 
-  mutate(precio = price*0.92)
+vinos_ib <- vinos_ib |>
+  mutate(precio_eur = price * 0.92)
 ```
 
-- Transformar columnas (logaritmo, tipificar, ...)
+### Transformaciones numéricas
 
-
-Transformación logarítmica, observa el cambio:
+Transformación logarítmica (observa el cambio en la distribución):
 
 ```{r}
-library(ggplot2)
-vinos_ib |> 
-  ggplot(aes(price)) + 
+vinos_ib |>
+  ggplot(aes(price)) +
   geom_histogram()
 
-vinos_ib <- vinos_ib |> 
+vinos_ib <- vinos_ib |>
   mutate(logPrecio = log(price, base = 10))
 
-vinos_ib |> 
-  ggplot(aes(logPrecio)) + 
+vinos_ib |>
+  ggplot(aes(logPrecio)) +
   geom_histogram()
 ```
 
 Tipificación:
 
 ```{r}
-vinos_ib |> 
+vinos_ib |>
   slice_max(price, n = 5)
 
-vinos_ib |> 
+vinos_ib |>
   mutate(scaled_price = scale(price),
-         .after = price) 
-
+         .after = price)
 ```
-
-
-
 
 Ordenar las columnas:
 
 ```{r}
-vinos_ib <- vinos_ib |> relocate(precio,
-                     .after = price)
+vinos_ib <- vinos_ib |>
+  relocate(precio_eur, .after = price)
 ```
 
-
-
-
-
-- Tratamiento de valores perdidos
+### Tratamiento de valores perdidos
 
 ```{r}
-vinos_ib |> 
-  filter(is.na(price)) 
+vinos_ib |>
+  filter(is.na(price))
 
-library(tidyr)
-vinos_ib |> 
+vinos_ib |>
   filter(is.na(taster_name))
 
-vinos_ib |> 
-  fill(taster_name)
-
-vinos_ib |> 
+vinos_ib |>
   replace_na(list(taster_name = "DESCONOCIDO",
-                  price = median(vinos_ib$price)))
+                  price = median(vinos_ib$price, na.rm = TRUE)))
 
-vinos_ib |> 
-  select(variety, price)
-
-vinos_ib <- vinos_ib |> 
+vinos_ib <- vinos_ib |>
   select(-region_2)
 
-vinos_ib |> 
-  drop_na(everything())
-
-vinos_ib |> 
+vinos_ib |>
   drop_na(points, price)
 ```
 
-
-- Tratamiento de outliers
+### Tratamiento de outliers
 
 Básicamente igual que los valores perdidos, pero se puede analizar más.
 
-- Unión de tablas
+### Unión con tabla de Denominaciones de Origen
 
-- Apilar y desapilar columnas
-
-- Agrupar y resumir
+Creamos una tabla de referencia con las principales DOs españolas y la
+comunidad autónoma a la que pertenecen:
 
 ```{r}
-vinos_ib |> 
-  drop_na(points, price) |> 
-  group_by(country) |> 
-  summarise(precio_medio = mean(price))
+dos_espana <- tibble::tribble(
+  ~do,                                ~comunidad,
+  # DO principales
+  "Rioja",                            "La Rioja / País Vasco / Navarra",
+  "Ribera del Duero",                 "Castilla y León",
+  "Priorat",                          "Cataluña",
+  "Rías Baixas",                      "Galicia",
+  "Rueda",                            "Castilla y León",
+  "Penedès",                          "Cataluña",
+  "Cava",                             "Cataluña (principalmente)",
+  "Toro",                             "Castilla y León",
+  "Bierzo",                           "Castilla y León",
+  "Navarra",                          "Navarra",
+  "Somontano",                        "Aragón",
+  "Montsant",                         "Cataluña",
+  "Costers del Segre",                "Cataluña",
+  "Yecla",                            "Murcia",
+  # Andalucía
+  "Jerez",                            "Andalucía",
+  "Manzanilla-Sanlúcar de Barrameda", "Andalucía",
+  "Málaga",                           "Andalucía",
+  "Montilla-Moriles",                 "Andalucía",
+  # Castilla-La Mancha
+  "La Mancha",                        "Castilla-La Mancha",
+  "Valdepeñas",                       "Castilla-La Mancha",
+  "Manchuela",                        "Castilla-La Mancha",
+  "Almansa",                          "Castilla-La Mancha",
+  "Uclés",                            "Castilla-La Mancha",
+  "Mentrida",                         "Castilla-La Mancha",
+  # Castilla y León
+  "Cigales",                          "Castilla y León",
+  "Tierra de León",                   "Castilla y León",
+  "Arribes del Duero",                "Castilla y León",
+  "Sierra de Salamanca",              "Castilla y León",
+  # Aragón
+  "Cariñena",                         "Aragón",
+  "Campo de Borja",                   "Aragón",
+  "Calatayud",                        "Aragón",
+  # Comunitat Valenciana
+  "Valencia",                         "Comunitat Valenciana",
+  "Alicante",                         "Comunitat Valenciana",
+  "Utiel-Requena",                    "Comunitat Valenciana",
+  # Cataluña
+  "Terra Alta",                       "Cataluña",
+  "Catalunya",                        "Cataluña",
+  "Catalonia",                        "Cataluña",
+  "Empordà",                          "Cataluña",
+  "Conca de Barberà",                 "Cataluña",
+  "Tarragona",                        "Cataluña",
+  "Alella",                           "Cataluña",
+  "Pla de Bages",                     "Cataluña",
+  # Galicia
+  "Valdeorras",                       "Galicia",
+  "Ribeiro",                          "Galicia",
+  "Ribeira Sacra",                    "Galicia",
+  "Monterrei",                        "Galicia",
+  # País Vasco
+  "Txakoli de Getaria",               "País Vasco",
+  "Getariako Txakolina",              "País Vasco",
+  "Bizkaiko Txakolina",               "País Vasco",
+  # Madrid
+  "Vinos de Madrid",                  "Comunidad de Madrid",
+  # Murcia
+  "Jumilla",                          "Murcia / Castilla-La Mancha",
+  # Extremadura
+  "Ribera del Guadiana",              "Extremadura"
+)
+
+# Unir con los vinos españoles por region_1
+vinos_es_do <- vinos_ib |>
+  filter(country == "Spain") |>
+  left_join(dos_espana, by = c("region_1" = "do"))
+
+vinos_es_do |>
+  count(comunidad, sort = TRUE)
+
+# El ~8% sin coincidencia corresponde a:
+# - "Vino de la Tierra de Castilla/Castilla y León": IGPs que abarcan toda una región
+# - "Spain": reseñas sin región especificada
+# - Pagos de viñedo único (Dominio de Valdepusa, Pago de Arínzano)
+# En estos casos el LEFT JOIN devuelve NA, que es el comportamiento correcto.
 ```
 
+### Agrupar y resumir
 
-- Operaciones con fechas
+```{r}
+vinos_ib |>
+  drop_na(points, price) |>
+  group_by(country) |>
+  summarise(
+    n_resenas    = n(),
+    precio_medio = mean(price),
+    puntos_medio = mean(points)
+  )
+```
 
-Para operaciones con fechas, ver la documentación del paquete {lubridate} del tidyverse <https://lubridate.tidyverse.org>.
+### Preparar tabla de producción
 
+```{r}
+produccion_raw <- read_csv("datos/produccion_vino.csv")
 
-- Operaciones con textos
+# Limpiar: renombrar columnas, filtrar países reales (quitar agregados)
+produccion_vino <- produccion_raw |>
+  rename(
+    pais                 = Entity,
+    codigo_iso           = Code,
+    anio                 = Year,
+    produccion_toneladas = `Wine - Production (tonnes)`
+  ) |>
+  # Eliminar agregados regionales (no tienen código ISO de 3 letras)
+  filter(str_length(codigo_iso) == 3,
+         !str_detect(codigo_iso, "OWID")) |>
+  drop_na(produccion_toneladas) |>
+  # Armonizar nombres de país con los del dataset de catas
+  mutate(pais = recode(pais,
+    "United States"  = "US",
+    "Czechia"        = "Czech Republic",
+    "North Macedonia"= "Macedonia",
+    "United Kingdom" = "England"
+  ))
 
-Para manipulación de cadenas de caracteres, ver la documentación del paquete {stringr} del _tidyverse_ <https://stringr.tidyverse.org>. Con la función `paste()` de R base ya se pueden hacer muchas cosas. El capítulo [Strings de R for data Science es el mejor sitio para aprender](https://r4ds.hadley.nz/strings.html).
+glimpse(produccion_vino)
+```
 
-- Eliminar Columnas constantes (_zero variance_), o con todos los valores NA.
+Exploracion de los principales productores en años recientes:
 
-
+```{r}
+produccion_vino |>
+  filter(anio == 2020) |>
+  slice_max(produccion_toneladas, n = 10) |>
+  ggplot(aes(x = reorder(pais, produccion_toneladas),
+             y = produccion_toneladas / 1e6)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top 10 productores de vino (2020)",
+       x = NULL, y = "Millones de toneladas")
+```
 
 
 ## Load
 
-La última parte del proceso ETL tiene que ver con la carga de datos "limpios" en el lugar desde el que van a ser "explotados". Tradicionalmente tablas en una base de datos relacional como la que hemos usado antes y ya hemos hecho una carga. Pero actualmente hay otras formas de organizar los _data warehouse_, por ejemplo con ficheros _parket_, o sistemas distribuidos como _Spark_.
+La última parte del proceso ETL tiene que ver con la carga de datos "limpios" en el lugar desde el que van a ser "explotados". El output del ETL son ficheros limpios que otros procesos (como la carga en base de datos) consumirán después.
+
+Creamos la carpeta de datos limpios si no existe:
+
+```{r}
+if (!dir.exists("datos/clean")) dir.create("datos/clean")
+```
+
+
+La opción más sencilla en R es guardar en formato **RDS**, nativo de R:
+
+```{r}
+saveRDS(winetasting,     "datos/clean/tasting.rds")
+saveRDS(produccion_vino, "datos/clean/produccion_vino.rds")
+saveRDS(dos_espana,      "datos/clean/dos_espana.rds")
+```
+
+En entornos de producción se prefiere **Parquet**: es más compacto, más rápido y
+puede ser leído por Python, Spark, DuckDB, etc. — no está atado a R:
+
+```{r}
+# library(arrow)
+# write_parquet(winetasting,     "datos/clean/tasting.parquet")
+# write_parquet(produccion_vino, "datos/clean/produccion_vino.parquet")
+# write_parquet(dos_espana,      "datos/clean/dos_espana.parquet")
+```
+
+Con esto el ETL ha terminado. Los ficheros en `datos/clean/` son el punto de
+partida para la siguiente sesión: **Bases de datos**.
 
 ## Resumen
 
@@ -315,13 +592,13 @@ Por supuesto, los procesos ETL (Extract, Transform, Load) son fundamentales en l
 
 1. **Extracción (Extract)**:
    - **Objetivo**: Obtener datos de diversas fuentes, que pueden ser bases de datos, archivos, aplicaciones, APIs, etc.
-   - **Actividades**: 
+   - **Actividades**:
      - Conectar con las fuentes de datos.
      - Extraer los datos necesarios, asegurando que se capturen todos los datos relevantes y se minimicen los impactos en las fuentes originales.
 
 2. **Transformación (Transform)**:
    - **Objetivo**: Convertir los datos extraídos a un formato adecuado para el análisis y cargarlos en el almacén de datos.
-   - **Actividades**: 
+   - **Actividades**:
      - Limpieza de datos: Eliminar duplicados, manejar valores nulos, corregir errores.
      - Estandarización: Convertir datos a formatos comunes.
      - Enriquecimiento: Agregar datos adicionales que pueden ser útiles para el análisis.
@@ -330,7 +607,7 @@ Por supuesto, los procesos ETL (Extract, Transform, Load) son fundamentales en l
 
 3. **Carga (Load)**:
    - **Objetivo**: Importar los datos transformados en el sistema de destino, como un almacén de datos.
-   - **Actividades**: 
+   - **Actividades**:
      - Cargar datos en tablas del almacén de datos.
      - Verificación de la integridad de los datos cargados.
      - Optimización del rendimiento de la carga, asegurando que se minimicen los tiempos de inactividad y los impactos en los usuarios del sistema de destino.

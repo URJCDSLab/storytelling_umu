@@ -14,10 +14,10 @@ website:
     left:
       - href: index.qmd
         text: Bienvenida
-      - href: db.qmd
-        text: Bases de datos
       - href: etl.qmd
         text: Procesos ETL
+      - href: db.qmd
+        text: Bases de datos
       - href: shiny.qmd
         text: Shiny dashboards
       - href: despliegue.qmd
@@ -25,6 +25,9 @@ website:
         
       - href: about.qmd
         text: Profesor
+
+filters:
+  - highlight-lines.lua
 
 format:
   html:

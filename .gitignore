@@ -50,3 +50,5 @@ Dockerfile_arm0
 
 _site
 .quarto
+/.quarto/
+**/*.quarto_ipynb
