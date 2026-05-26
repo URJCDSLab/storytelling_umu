@@ -10,7 +10,7 @@ knitr:
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 library(DT)
@@ -80,10 +80,10 @@ Así evitamos cargar 130.000 filas en memoria al arrancar.
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 # Solo los países distintos para el desplegable — sin collect() completo
@@ -118,10 +118,10 @@ la base de datos y los usamos como opciones del desplegable. El resto se agrupa 
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -158,10 +158,10 @@ Los outputs se añaden con funciones `xxxOutput()` en el `ui`.
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -205,11 +205,11 @@ se ejecuta cuando cambia el país seleccionado.
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -257,11 +257,11 @@ se aplica después de `collect()`, en R, no en la base de datos.
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -309,13 +309,13 @@ Se añade también un input para cambiar el color de los puntos según país o v
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -389,13 +389,13 @@ entre la tabla de coeficientes y el resumen, evitando calcularlo dos veces.
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -503,13 +503,13 @@ Elige el que más te guste:
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()

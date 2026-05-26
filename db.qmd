@@ -28,7 +28,7 @@ Instálalos desde el panel _Packages_ de RStudio si no los tienes.
 ```{r}
 #| label: setup
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dbplyr)
 library(dplyr)
 library(tidyr)
@@ -60,8 +60,8 @@ estemos trabajando.
 if (!dir.exists("app/data")) dir.create("app/data", recursive = TRUE)
 
 con <- DBI::dbConnect(
-  duckdb::duckdb(),
-  dbdir = "app/data/wine.db"
+  RSQLite::SQLite(),
+  dbname = "app/data/wine.db"
 )
 ```
 

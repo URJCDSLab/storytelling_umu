@@ -1,13 +1,13 @@
 library(shiny)
 library(bslib)
 library(DBI)
-library(duckdb)
+library(RSQLite)
 library(dplyr)
 library(ggplot2)
 library(DT)
 library(broom)
 
-con  <- dbConnect(duckdb(), dbdir = "data/wine.db", read_only = TRUE)
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
 
 # Compute top levels once at startup from a minimal query
