@@ -13,6 +13,8 @@ library(stringr)
 library(forcats)
 library(ggplot2)
 library(purrr)
+library(janitor)
+library(arrow)
 ```
 
 En los procesos empresariales, generalmente hay que realizar este tipo de tareas
@@ -81,7 +83,7 @@ reseñas de vino están particionados por año y mes en el repositorio del curso
 
 ```{r}
 #| eval: false
-base_url <- "https://raw.githubusercontent.com/usuario/repo/main/datos/raw/winemag"
+base_url <- "https://raw.githubusercontent.com/URJCDSLab/storytelling_umu/refs/heads/main/datos/raw/winemag/"
 
 anios <- 1997:2016
 meses <- sprintf("%02d", 1:12)
@@ -147,7 +149,6 @@ algunas de ellas. Muchas veces se habla de _feature engineering_ sobre todo
 cuando la transformación va dirigida a la creación de modelos estadísticos.
 
 ```{r}
-#| include: false
 vinos_ib <- winetasting |>
   filter(country %in% c("Spain", "Portugal"))
 ```
@@ -270,7 +271,7 @@ vinos_ib |>
   filter(!is.na(antiguedad), !is.na(points)) |>
   group_by(antiguedad) |>
   summarise(puntos_medio = mean(points), desviacion = sd(points), n = n()) |>
-  arrange(desc(antiguedad))
+  arrange(desc(puntos_medio))
 ```
 
 Otra posible forma de hacerlo es a través de una visualización.
@@ -384,6 +385,8 @@ Ordenar las columnas:
 vinos_ib <- vinos_ib |>
   relocate(precio_eur, .after = price)
 ```
+
+También tendríamos la primera `.before = everything()` o la última `.after = last_col()`.
 
 ### Tratamiento de valores perdidos
 
@@ -577,10 +580,9 @@ En entornos de producción se prefiere **Parquet**: es más compacto, más rápi
 puede ser leído por Python, Spark, DuckDB, etc. — no está atado a R:
 
 ```{r}
-# library(arrow)
-# write_parquet(winetasting,     "datos/clean/tasting.parquet")
-# write_parquet(produccion_vino, "datos/clean/produccion_vino.parquet")
-# write_parquet(dos_espana,      "datos/clean/dos_espana.parquet")
+write_parquet(winetasting,     "datos/clean/tasting.parquet")
+write_parquet(produccion_vino, "datos/clean/produccion_vino.parquet")
+write_parquet(dos_espana,      "datos/clean/dos_espana.parquet")
 ```
 
 Con esto el ETL ha terminado. Los ficheros en `datos/clean/` son el punto de
