@@ -59,6 +59,19 @@ La metodología CRISP-DM (Cross-Industry Standard Process for Data Mining) es un
 
 Estas fases proporcionan un marco estructurado para abordar problemas de minería de datos de manera sistemática, asegurando que los resultados obtenidos sean útiles y alineados con los objetivos del negocio.
 
+### Aplicación al proyecto
+
+El proyecto recorre las seis fases de forma concreta:
+
+- **Comprensión del negocio** — la pregunta de partida es: ¿qué factores explican el precio y la puntuación de un vino? Esa pregunta guía todas las decisiones del proyecto.
+- **Comprensión de los datos** — en [Procesos ETL](etl.qmd) se cargan los datos brutos y se exploran distribuciones, tipos e inconsistencias.
+- **Preparación de los datos** — también en [Procesos ETL](etl.qmd): limpieza, extracción del año de cosecha, tratamiento de valores perdidos, transformaciones numéricas y enriquecimiento con datos externos (producción FAO y denominaciones de origen).
+- **Modelado** — en [Shiny Dashboards](shiny.qmd) se ajusta un modelo de regresión lineal que estima el precio a partir de la puntuación, el país y la variedad.
+- **Evaluación** — la tabla de coeficientes y el resumen del modelo son accesibles directamente en la aplicación, permitiendo interpretar los resultados en contexto.
+- **Despliegue** — en [Bases de datos](db.qmd) los datos limpios se cargan en una base de datos SQLite; en [Despliegue](despliegue.qmd) la aplicación Shiny se publica en la nube y queda accesible sin necesidad de instalar R.
+
+El proceso no es lineal: al construir el mapa mundial se detectaron inconsistencias en los nombres de país que obligaron a volver a la fase de preparación. Eso es CRISP-DM en la práctica.
+
 
 ## Desarrollo de las sesiones
 
