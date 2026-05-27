@@ -133,7 +133,10 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#objetivo" id="toc-objetivo" class="nav-link active" data-scroll-target="#objetivo">Objetivo</a></li>
-  <li><a href="#metodología" id="toc-metodología" class="nav-link" data-scroll-target="#metodología">Metodología</a></li>
+  <li><a href="#metodología" id="toc-metodología" class="nav-link" data-scroll-target="#metodología">Metodología</a>
+  <ul class="collapse">
+  <li><a href="#aplicación-al-proyecto" id="toc-aplicación-al-proyecto" class="nav-link" data-scroll-target="#aplicación-al-proyecto">Aplicación al proyecto</a></li>
+  </ul></li>
   <li><a href="#desarrollo-de-las-sesiones" id="toc-desarrollo-de-las-sesiones" class="nav-link" data-scroll-target="#desarrollo-de-las-sesiones">Desarrollo de las sesiones</a></li>
   <li><a href="#requisitos-previos" id="toc-requisitos-previos" class="nav-link" data-scroll-target="#requisitos-previos">Requisitos previos</a></li>
   <li><a href="#datos" id="toc-datos" class="nav-link" data-scroll-target="#datos">Datos</a></li>
@@ -222,6 +225,19 @@ Figura&nbsp;1: Fases metodología CRISP-DM
 </ul></li>
 </ol>
 <p>Estas fases proporcionan un marco estructurado para abordar problemas de minería de datos de manera sistemática, asegurando que los resultados obtenidos sean útiles y alineados con los objetivos del negocio.</p>
+<section id="aplicación-al-proyecto" class="level3">
+<h3 class="anchored" data-anchor-id="aplicación-al-proyecto">Aplicación al proyecto</h3>
+<p>El proyecto recorre las seis fases de forma concreta:</p>
+<ul>
+<li><strong>Comprensión del negocio</strong> — la pregunta de partida es: ¿qué factores explican el precio y la puntuación de un vino? Esa pregunta guía todas las decisiones del proyecto.</li>
+<li><strong>Comprensión de los datos</strong> — en <a href="./etl.html">Procesos ETL</a> se cargan los datos brutos y se exploran distribuciones, tipos e inconsistencias.</li>
+<li><strong>Preparación de los datos</strong> — también en <a href="./etl.html">Procesos ETL</a>: limpieza, extracción del año de cosecha, tratamiento de valores perdidos, transformaciones numéricas y enriquecimiento con datos externos (producción FAO y denominaciones de origen).</li>
+<li><strong>Modelado</strong> — en <a href="./shiny.html">Shiny Dashboards</a> se ajusta un modelo de regresión lineal que estima el precio a partir de la puntuación, el país y la variedad.</li>
+<li><strong>Evaluación</strong> — la tabla de coeficientes y el resumen del modelo son accesibles directamente en la aplicación, permitiendo interpretar los resultados en contexto.</li>
+<li><strong>Despliegue</strong> — en <a href="./db.html">Bases de datos</a> los datos limpios se cargan en una base de datos SQLite; en <a href="./despliegue.html">Despliegue</a> la aplicación Shiny se publica en la nube y queda accesible sin necesidad de instalar R.</li>
+</ul>
+<p>El proceso no es lineal: al construir el mapa mundial se detectaron inconsistencias en los nombres de país que obligaron a volver a la fase de preparación. Eso es CRISP-DM en la práctica.</p>
+</section>
 </section>
 <section id="desarrollo-de-las-sesiones" class="level2">
 <h2 class="anchored" data-anchor-id="desarrollo-de-las-sesiones">Desarrollo de las sesiones</h2>
@@ -345,7 +361,7 @@ Figura&nbsp;1: Fases metodología CRISP-DM
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp('/' + window.location.host + '/');
+        var filterRegex = new RegExp("https:\/\/URJCDSLab\.github\.io\/storytelling_umu\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
