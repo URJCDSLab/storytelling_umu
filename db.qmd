@@ -12,8 +12,7 @@ se van a crear bases de datos "locales" para practicar su creación y modificaci
 utilizará una base de datos remota para leer datos en tiempo real desde R (sin
 necesidad de conocer SQL).
 
-Vamos a seguir los ejemplos y explicaciones del [Capítulo 21 de R for Data Science 2nd ed.](https://r4ds.hadley.nz/databases), aplicándolos a nuestros conjuntos de
-datos de vino.
+Vamos a seguir los ejemplos y explicaciones del [Capítulo 21 de R for Data Science 2nd ed.](https://r4ds.hadley.nz/databases), aplicándolos a nuestros conjuntos de datos de vino. Utilizaremos SQLite como base de datos [Cheatsheet SQLite](https://learnsql.com/blog/sql-for-data-analysis-cheat-sheet/)
 
 ## Preparación
 
@@ -336,6 +335,322 @@ winetbl |>
     .groups      = "drop"
   ) |>
   arrange(desc(puntos_medio)) |>
+  collect()
+```
+
+:::
+
+## Modificar datos
+
+Hasta ahora solo hemos leído la base de datos. En un flujo real también es
+necesario insertar, actualizar o eliminar filas. Esto se hace con `dbExecute()`,
+que envía una sentencia SQL que no devuelve datos.
+
+### Añadir filas
+
+```{r}
+# Insertar una reseña ficticia
+dbExecute(con, "
+  INSERT INTO tasting (country, points, price, variety, winery, title)
+  VALUES ('Spain', 95, 25, 'Tempranillo', 'Bodega Ejemplo', 'Ejemplo 2020 Tempranillo')
+")
+
+# Comprobar que se ha insertado
+dbGetQuery(con, "SELECT * FROM tasting WHERE winery = 'Bodega Ejemplo'")
+```
+
+También se puede usar `dbAppendTable()` para añadir un data.frame completo
+sin escribir SQL:
+
+```{r}
+nueva_resena <- data.frame(
+  country  = "Spain",
+  points   = 92L,
+  price    = 18,
+  variety  = "Garnacha",
+  winery   = "Bodega Ejemplo",
+  title    = "Ejemplo 2021 Garnacha"
+)
+
+dbAppendTable(con, "tasting", nueva_resena)
+```
+
+### Actualizar filas
+
+```{r}
+# Corregir el precio de las reseñas de la bodega ficticia
+dbExecute(con, "
+  UPDATE tasting
+  SET price = 20
+  WHERE winery = 'Bodega Ejemplo'
+")
+
+dbGetQuery(con, "SELECT title, price FROM tasting WHERE winery = 'Bodega Ejemplo'")
+```
+
+### Eliminar filas
+
+```{r}
+# Limpiar las filas de prueba
+dbExecute(con, "DELETE FROM tasting WHERE winery = 'Bodega Ejemplo'")
+
+# Verificar que ya no están
+dbGetQuery(con, "SELECT COUNT(*) FROM tasting WHERE winery = 'Bodega Ejemplo'")
+```
+
+:::{.callout-tip}
+`dbExecute()` devuelve el número de filas afectadas, lo que permite comprobar
+que la operación ha tenido el efecto esperado.
+:::
+
+## Consultas avanzadas: CTEs
+
+Las **Common Table Expressions** (CTEs) permiten nombrar subconsultas y
+referenciarlas como si fueran tablas, haciendo el SQL más legible. Se definen
+con `WITH nombre AS (...)`.
+
+```{r}
+# CTE: catadores con al menos 50 reseñas y su puntuación media
+consulta_cte <- "
+  WITH catadores_activos AS (
+    SELECT taster_name,
+           COUNT(*)       AS n_resenas,
+           AVG(points)    AS puntos_medio,
+           AVG(price)     AS precio_medio
+    FROM tasting
+    WHERE taster_name IS NOT NULL
+    GROUP BY taster_name
+    HAVING COUNT(*) >= 50
+  )
+  SELECT *
+  FROM catadores_activos
+  ORDER BY puntos_medio DESC
+"
+dbGetQuery(con, consulta_cte)
+```
+
+```{r}
+# CTE encadenadas: primero los países con más de 1000 reseñas,
+# luego los 5 vinos más caros de esos países
+consulta_cte2 <- "
+  WITH paises_grandes AS (
+    SELECT country
+    FROM tasting
+    GROUP BY country
+    HAVING COUNT(*) > 1000
+  ),
+  vinos_caros AS (
+    SELECT t.title, t.country, t.price, t.points
+    FROM tasting t
+    INNER JOIN paises_grandes p ON t.country = p.country
+    WHERE t.price IS NOT NULL
+  )
+  SELECT *
+  FROM vinos_caros
+  ORDER BY price DESC
+  LIMIT 10
+"
+dbGetQuery(con, consulta_cte2)
+```
+
+:::{.callout-tip}
+Las CTEs no mejoran el rendimiento respecto a una subconsulta equivalente,
+pero hacen el código mucho más fácil de leer y depurar, especialmente cuando
+hay varios pasos encadenados.
+:::
+
+## Ejercicios SQL
+
+Los siguientes ejercicios plantean preguntas de negocio reales. Escribe la
+consulta SQL con `dbGetQuery()` para responderlas.
+
+:::{.callout-caution}
+
+## Ejercicio 1
+
+¿Cuál es el **precio medio por variedad** para las variedades con más de 500
+reseñas? Ordena de mayor a menor precio.
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+**SQL:**
+
+```{r}
+dbGetQuery(con, "
+  SELECT variety,
+         COUNT(*)    AS n_resenas,
+         AVG(price)  AS precio_medio
+  FROM tasting
+  WHERE price IS NOT NULL
+  GROUP BY variety
+  HAVING COUNT(*) > 500
+  ORDER BY precio_medio DESC
+")
+```
+
+**{dbplyr}:**
+
+```{r}
+winetbl |>
+  filter(!is.na(price)) |>
+  group_by(variety) |>
+  summarise(
+    n_resenas    = n(),
+    precio_medio = mean(price, na.rm = TRUE),
+    .groups      = "drop"
+  ) |>
+  filter(n_resenas > 500) |>
+  arrange(desc(precio_medio)) |>
+  collect()
+```
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 2
+
+¿Qué **catador** tiene la puntuación media más alta entre los que han escrito
+al menos 50 reseñas? Muestra también cuántas reseñas tiene y su precio medio.
+
+Pista: necesitarás `HAVING`.
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+**SQL:**
+
+```{r}
+dbGetQuery(con, "
+  SELECT taster_name,
+         COUNT(*)    AS n_resenas,
+         AVG(points) AS puntos_medio,
+         AVG(price)  AS precio_medio
+  FROM tasting
+  WHERE taster_name IS NOT NULL
+  GROUP BY taster_name
+  HAVING COUNT(*) >= 50
+  ORDER BY puntos_medio DESC
+  LIMIT 10
+")
+```
+
+**{dbplyr}:**
+
+```{r}
+winetbl |>
+  filter(!is.na(taster_name)) |>
+  group_by(taster_name) |>
+  summarise(
+    n_resenas    = n(),
+    puntos_medio = mean(points, na.rm = TRUE),
+    precio_medio = mean(price,  na.rm = TRUE),
+    .groups      = "drop"
+  ) |>
+  filter(n_resenas >= 50) |>
+  arrange(desc(puntos_medio)) |>
+  head(10) |>
+  collect()
+```
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 3
+
+Usando una CTE, obtén los **10 vinos españoles más caros** que tengan una
+puntuación superior a 90 puntos. Muestra título, precio, puntuación y región.
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+**SQL:**
+
+```{r}
+dbGetQuery(con, "
+  WITH espana_top AS (
+    SELECT title, price, points, region_1
+    FROM tasting
+    WHERE country = 'Spain'
+      AND points > 90
+      AND price IS NOT NULL
+  )
+  SELECT *
+  FROM espana_top
+  ORDER BY price DESC
+  LIMIT 10
+")
+```
+
+**{dbplyr}:**
+
+```{r}
+winetbl |>
+  filter(country == "Spain", points > 90, !is.na(price)) |>
+  select(title, price, points, region_1) |>
+  arrange(desc(price)) |>
+  head(10) |>
+  collect()
+```
+
+:::
+
+:::{.callout-caution}
+
+## Ejercicio 4
+
+¿Cuántos vinos de cada país tienen un precio **por encima de la media global**?
+Ordena el resultado de mayor a menor.
+
+Pista: la media global se puede calcular en una subconsulta o en una CTE.
+
+:::
+
+:::{.callout-tip collapse="true"}
+
+## Solución
+
+**SQL:**
+
+```{r}
+dbGetQuery(con, "
+  WITH media_global AS (
+    SELECT AVG(price) AS media
+    FROM tasting
+    WHERE price IS NOT NULL
+  )
+  SELECT t.country,
+         COUNT(*) AS n_vinos_caros
+  FROM tasting t, media_global m
+  WHERE t.price > m.media
+  GROUP BY t.country
+  ORDER BY n_vinos_caros DESC
+")
+```
+
+**{dbplyr}:**
+
+```{r}
+media_global <- winetbl |>
+  summarise(media = mean(price, na.rm = TRUE)) |>
+  pull(media)
+
+winetbl |>
+  filter(price > media_global) |>
+  group_by(country) |>
+  summarise(n_vinos_caros = n(), .groups = "drop") |>
+  arrange(desc(n_vinos_caros)) |>
   collect()
 ```
 
