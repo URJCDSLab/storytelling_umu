@@ -961,7 +961,7 @@ output$otablamapa <- renderDT({
 
 Podemos añadir un botón en la pestaña **Análisis** que envíe el resumen del
 modelo a un LLM vía OpenRouter y muestre una interpretación en lenguaje sencillo.
-No hay conversación — es una sola llamada: le mandamos el output de `summary()`
+No hay conversación, es una sola llamada: le mandamos el output de `summary()`
 y el modelo responde.
 
 Para que funcione, necesitas una clave de API en `.Renviron`:
