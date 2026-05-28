@@ -4,6 +4,7 @@ library(DBI)
 library(RSQLite)
 library(dbplyr)
 library(dplyr)
+library(httr2)
 library(ggplot2)
 library(DT)
 library(broom)
@@ -37,6 +38,33 @@ country_recode <- c(
   "Turkey"         = "Türkiye",
   "US"             = "United States"
 )
+
+interpretar_modelo <- function(summary_text) {
+  api_key <- Sys.getenv("OPENROUTER_API_KEY")
+  if (nchar(api_key) == 0) stop("OPENROUTER_API_KEY no configurada en .Renviron")
+
+  request("https://openrouter.ai/api/v1/chat/completions") |>
+    req_headers(Authorization = paste("Bearer", api_key),
+                `Content-Type` = "application/json") |>
+    req_body_json(list(
+      model    = "openrouter/free",
+      messages = list(
+        list(role = "system",
+             content = paste(
+               "Eres un profesor de estadística. Interpreta el siguiente",
+               "resumen de un modelo de regresión lineal en lenguaje sencillo",
+               "para estudiantes de máster sin experiencia avanzada en estadística.",
+               "Destaca los coeficientes más importantes, el R², y si el modelo",
+               "es útil para predecir el precio del vino. Responde en español,",
+               "en 3-4 párrafos breves."
+             )),
+        list(role = "user", content = summary_text)
+      )
+    )) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = FALSE) |>
+    (`[[`)("choices") |> (`[[`)(1) |> (`[[`)("message") |> (`[[`)("content")
+}
 
 # Build geo data once at startup
 countries_geo <- gisco_get_countries()
@@ -94,7 +122,11 @@ ui <- page_navbar(
               nav_panel("Coeficientes",
                         dataTableOutput("ocoeficientes")),
               nav_panel("Análisis",
-                        verbatimTextOutput("oanalisis"))
+                        verbatimTextOutput("oanalisis"),
+                        hr(),
+                        actionButton("ibtnia", "Interpretar con IA",
+                                     icon = icon("robot")),
+                        uiOutput("ointerpretacion"))
             ))
 )
 
@@ -221,6 +253,18 @@ server <- function(input, output) {
 
   output$oanalisis <- renderPrint({
     summary(modelo())
+  })
+
+  interpretacion <- eventReactive(input$ibtnia, {
+    summary_text <- paste(capture.output(summary(modelo())), collapse = "\n")
+    withProgress(message = "Consultando IA...", interpretar_modelo(summary_text))
+  })
+
+  output$ointerpretacion <- renderUI({
+    req(interpretacion())
+    div(style = "margin-top:1rem; padding:1rem; background:#f8f9fa; border-radius:6px;",
+        h5("Interpretación"),
+        p(interpretacion()))
   })
 }
 

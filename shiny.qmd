@@ -78,7 +78,7 @@ En lugar de traer toda la tabla con `collect()`, creamos una referencia
 lazy con `tbl()` y solo consultamos lo estrictamente necesario para cada elemento.
 Así evitamos cargar 130.000 filas en memoria al arrancar.
 
-```{.r highlight-lines="3-5,7-11"}
+```{.r highlight-lines="3-5,7-10"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -88,9 +88,6 @@ library(dplyr)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
 wine <- tbl(con, "tasting")
-
-# Solo los países distintos para el desplegable — sin collect() completo
-paises <- wine |> distinct(country) |> pull(country)
 
 ui <- page_navbar(
   title = "El vino y yo",
@@ -117,7 +114,7 @@ es el identificador que usaremos en `server` como `input$<identificador>`.
 Para la agrupación por país, calculamos los 20 países más frecuentes en
 la base de datos y los usamos como opciones del desplegable. El resto se agrupa en "Other".
 
-```{.r highlight-lines="10-14,19-22"}
+```{.r highlight-lines="10-14,20-23"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -158,7 +155,7 @@ shinyApp(ui, server)
 Añadimos un output donde mostrar el histograma del precio según el país seleccionado.
 Los outputs se añaden con funciones `xxxOutput()` en el `ui`.
 
-```{.r highlight-lines="23-25"}
+```{.r highlight-lines="24-26"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -259,7 +256,7 @@ shinyApp(ui, server)
 Añadimos un input para mostrar el precio en escala logarítmica. La transformación
 se aplica después de `collect()`, en R, no en la base de datos.
 
-```{.r highlight-lines="24-24,38-43"}
+```{.r highlight-lines="24-24,39-44"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -312,7 +309,7 @@ shinyApp(ui, server)
 Añadimos una segunda página con pestañas: gráfico de dispersión y tabla de coeficientes.
 Se añade también un input para cambiar el color de los puntos según país o variedad.
 
-```{.r highlight-lines="7-8,27-29,33-41,57-71"}
+```{.r highlight-lines="7-8,29-32,35-42,59-72"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -394,7 +391,7 @@ shinyApp(ui, server)
 Añadimos el modelo de regresión. Usamos `reactive()` para compartir el modelo
 entre la tabla de coeficientes y el resumen, evitando calcularlo dos veces.
 
-```{.r highlight-lines="47-57,88-95"}
+```{.r highlight-lines="48-59,89-97"}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -631,7 +628,7 @@ El agregado por país (`group_by` + `summarise`) se ejecuta **en la base de
 datos** antes de `collect()`, de modo que solo se transfieren a R los ~45 países
 con datos, no las 130.000 filas.
 
-```{.r highlight-lines="10-12,24-42,57-59,80-96"}
+```{.r}
 library(shiny)
 library(bslib)
 library(DBI)
@@ -647,6 +644,14 @@ library(giscoR)
 library(leaflet)
 
 con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
+# Alternatively, connect to the hosted PostgreSQL database:
+# library(RPostgres)
+# con <- dbConnect(RPostgres::Postgres(),
+#                  host     = "dslabapps.es",
+#                  port     = 5499,
+#                  dbname   = "wine",
+#                  user     = "readonly_user",
+#                  password = "wine_readonly")
 wine <- tbl(con, "tasting")
 
 raw <- wine |> select(country, variety) |> collect()
@@ -809,15 +814,32 @@ en el menú lateral que permita elegir entre **precio mediano** y
 **Pistas:**
 
 - Añade un `selectizeInput("imapavar", ...)` en el `sidebar`. Los valores
-  internos (`"med_price"`, `"n_resenas"`) deben coincidir con los nombres de
-  columna en `geo_data`.
-- En `renderLeaflet`, lee `input$imapavar` para saber qué columna usar. Puedes
-  extraer la columna con `geo_data[[input$imapavar]]` y guardarla en una
-  variable local.
-- El dominio de `colorBin` y los `values` de `addLegend` deben usar esa
-  variable, no `~med_price` directamente.
-- El título de la leyenda también debería cambiar. Un `if` sencillo es
-  suficiente.
+  internos deben coincidir con los nombres de columna en `geo_data`:
+
+```r
+selectizeInput("imapavar",
+               label   = "Mapa: variable",
+               choices = c("Precio mediano"    = "med_price",
+                           "Número de reseñas" = "n_resenas"))
+```
+
+- En `renderLeaflet`, extrae la columna en una variable local y úsala en
+  `colorBin`, `fillColor` y `addLegend`. El título de la leyenda también
+  debe cambiar:
+
+```r
+output$omapa <- renderLeaflet({
+  var     <- input$imapavar
+  valores <- geo_data[[var]]
+  titulo  <- if (var == "med_price") "Precio mediano ($)" else "Nº reseñas"
+
+  pal <- colorBin("YlOrRd", domain = valores, ...)
+
+  geo_data |> leaflet() |> ... |>
+    addPolygons(fillColor = pal(valores), ...) |>
+    addLegend(pal = pal, values = valores, title = titulo, ...)
+})
+```
 
 :::
 
@@ -833,16 +855,29 @@ Ocúltalos cuando el usuario esté en otra pestaña:
 
 **Pistas:**
 
-- `conditionalPanel(condition = "...", ...)` envuelve el input que quieres
-  mostrar u ocultar. La condición es JavaScript.
-- Para saber en qué pestaña está el usuario, `page_navbar` puede exponer su
-  pestaña activa como un input si le das un `id`. Añade `id = "nav"` al
-  `page_navbar`.
-- La condición JavaScript que comprueba la pestaña activa tiene la forma
-  `"input.nav === 'Mapa'"`. El valor que se compara es exactamente el `title`
-  del `nav_panel`.
-- Aplica el mismo patrón para `icolormodelo`, cambiando el nombre de la
-  pestaña en la condición.
+- Añade `id = "nav"` al `page_navbar` para exponer la pestaña activa como `input$nav`:
+
+```r
+ui <- page_navbar(
+  id    = "nav",
+  ...
+)
+```
+
+- Envuelve cada input con `conditionalPanel`. La condición es JavaScript y
+  compara `input.nav` con el `title` exacto del `nav_panel`:
+
+```r
+conditionalPanel(
+  condition = "input.nav === 'Mapa'",
+  selectizeInput("imapavar", ...)
+)
+
+conditionalPanel(
+  condition = "input.nav === 'Modelo de precio'",
+  selectizeInput("icolormodelo", ...)
+)
+```
 
 :::
 
@@ -857,13 +892,27 @@ número de reseñas empieza por ese dato.
 
 **Pistas:**
 
-- El argumento `label` de `addPolygons` acepta un vector de texto, no solo
-  una fórmula. Puedes construirlo con `paste0()` antes de llamar a `leaflet`.
-- Usa `input$imapavar` dentro del `renderLeaflet` para decidir qué texto
-  construir. Un `if / else` con dos `paste0()` distintos es suficiente.
-- Recuerda que `label` espera un vector con tantos elementos como filas tiene
-  `geo_data`. `geo_data$country`, `geo_data$med_price`, etc. son vectores
-  normales dentro del `renderLeaflet`.
+- Construye el vector de etiquetas con `paste0()` antes de llamar a `leaflet()`,
+  usando un `if / else` sobre `input$imapavar`. Recuerda que `geo_data$country`,
+  `geo_data$med_price`, etc. son vectores normales dentro del `renderLeaflet`:
+
+```r
+etiqueta <- if (var == "med_price") {
+  paste0(geo_data$country, ": $", round(geo_data$med_price, 1),
+         " | ", round(geo_data$avg_points, 1), " pts",
+         " (", geo_data$n_resenas, " reseñas)")
+} else {
+  paste0(geo_data$country, ": ", geo_data$n_resenas, " reseñas",
+         " | $", round(geo_data$med_price, 1),
+         " | ", round(geo_data$avg_points, 1), " pts")
+}
+```
+
+- Pasa el vector al argumento `label` de `addPolygons`:
+
+```r
+addPolygons(..., label = etiqueta)
+```
 
 :::
 
@@ -877,14 +926,243 @@ La tabla debe ordenarse por la variable seleccionada en `imapavar`.
 
 **Pistas:**
 
-- En el `nav_panel("Mapa", ...)` puedes poner varios elementos, no solo el
-  mapa. Añade un `dataTableOutput("otablamapa")` debajo del `leafletOutput`.
-- En `server`, añade un `output$otablamapa <- renderDT({...})`. Dentro, toma
-  `geo_data`, elimina la columna de geometría con `st_drop_geometry()`,
-  selecciona las columnas de interés y ordena con `arrange(desc(...))` según
-  `input$imapavar`.
-- Para ordenar dinámicamente por una columna cuyo nombre está en una variable,
-  usa `arrange(desc(.data[[input$imapavar]]))`.
+- Añade `dataTableOutput("otablamapa")` en el `nav_panel("Mapa", ...)`,
+  debajo del `leafletOutput`:
+
+```r
+nav_panel("Mapa",
+          leafletOutput("omapa", height = "500px"),
+          dataTableOutput("otablamapa"))
+```
+
+- En `server`, ordena dinámicamente usando `.data[[input$imapavar]]` para
+  referenciar la columna por nombre:
+
+```r
+output$otablamapa <- renderDT({
+  geo_data |>
+    st_drop_geometry() |>
+    drop_na(country) |>
+    select(country, med_price, avg_points, n_resenas) |>
+    arrange(desc(.data[[input$imapavar]])) |>
+    datatable(
+      colnames = c("País", "Precio mediano", "Puntuación media", "Nº reseñas"),
+      options  = list(pageLength = 10)
+    ) |>
+    formatRound(columns = c("med_price", "avg_points"), digits = 1)
+})
+```
 
 :::
 
+
+
+## Extra: Interpretación con IA
+
+Podemos añadir un botón en la pestaña **Análisis** que envíe el resumen del
+modelo a un LLM vía OpenRouter y muestre una interpretación en lenguaje sencillo.
+No hay conversación — es una sola llamada: le mandamos el output de `summary()`
+y el modelo responde.
+
+Para que funcione, necesitas una clave de API en `.Renviron`:
+
+```
+OPENROUTER_API_KEY=sk-or-...
+```
+
+```{.r}
+#| eval: false
+library(shiny)
+library(bslib)
+library(DBI)
+library(RSQLite)
+library(dbplyr)
+library(dplyr)
+library(httr2)
+library(ggplot2)
+library(DT)
+library(broom)
+library(tidyr)
+library(sf)
+library(giscoR)
+library(leaflet)
+
+con  <- dbConnect(SQLite(), dbname = "data/wine.db", flags = SQLITE_RO)
+# Alternatively, connect to the hosted PostgreSQL database:
+# library(RPostgres)
+# con <- dbConnect(RPostgres::Postgres(),
+#                  host     = "dslabapps.es",
+#                  port     = 5499,
+#                  dbname   = "wine",
+#                  user     = "readonly_user",
+#                  password = "wine_readonly")
+wine <- tbl(con, "tasting")
+
+raw <- wine |> select(country, variety) |> collect()
+
+top_countries <- names(sort(table(raw$country), decreasing = TRUE))[1:20]
+top_varieties <- names(sort(table(raw$variety), decreasing = TRUE))[1:20]
+
+lump <- function(x, top) if_else(x %in% top, x, "Other")
+
+country_recode <- c(
+  "Czech Republic" = "Czechia",
+  "England"        = "United Kingdom",
+  "Macedonia"      = "North Macedonia",
+  "Turkey"         = "Türkiye",
+  "US"             = "United States"
+)
+
+countries_geo <- gisco_get_countries()
+
+geo_data <- wine |>
+  group_by(country) |>
+  summarise(
+    med_price  = median(price, na.rm = TRUE),
+    avg_points = mean(points,  na.rm = TRUE),
+    n_resenas  = n(),
+    .groups    = "drop"
+  ) |>
+  collect() |>
+  mutate(country_geo = recode(country, !!!country_recode)) |>
+  right_join(countries_geo |> select(NAME_ENGL, geometry),
+             by = c("country_geo" = "NAME_ENGL")) |>
+  st_as_sf()
+
+interpretar_modelo <- function(summary_text) {
+  api_key <- Sys.getenv("OPENROUTER_API_KEY")
+  if (nchar(api_key) == 0) stop("OPENROUTER_API_KEY no configurada en .Renviron")
+
+  request("https://openrouter.ai/api/v1/chat/completions") |>
+    req_headers(Authorization = paste("Bearer", api_key),
+                `Content-Type` = "application/json") |>
+    req_body_json(list(
+      model    = "openrouter/free",
+      messages = list(
+        list(role = "system",
+             content = paste(
+               "Eres un profesor de estadística. Interpreta el siguiente",
+               "resumen de un modelo de regresión lineal en lenguaje sencillo",
+               "para estudiantes de máster sin experiencia avanzada en estadística.",
+               "Destaca los coeficientes más importantes, el R², y si el modelo",
+               "es útil para predecir el precio del vino. Responde en español,",
+               "en 3-4 párrafos breves."
+             )),
+        list(role = "user", content = summary_text)
+      )
+    )) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = FALSE) |>
+    (`[[`)("choices") |> (`[[`)(1) |> (`[[`)("message") |> (`[[`)("content")
+}
+
+ui <- page_navbar(
+  theme = bs_theme(bootswatch = "cosmo"),
+  title = "El vino y yo",
+  sidebar = sidebar(title = "Menú lateral",
+                    selectizeInput("ipais",   label = "País",
+                                   choices = c(sort(top_countries), "Other")),
+                    checkboxInput("ilog",     label = "Logaritmo"),
+                    selectizeInput("icolormodelo", label = "Color puntos",
+                                   choices = c("fct_country", "fct_variety"))),
+  nav_panel("Exploración",
+            plotOutput("ohistprecio")),
+  nav_panel("Mapa",
+            leafletOutput("omapa", height = "600px")),
+  nav_panel("Modelo de precio",
+            navset_card_underline(
+              title = "Modelización",
+              nav_panel("Gráfico de dispersión", plotOutput("odisp")),
+              nav_panel("Coeficientes",          dataTableOutput("ocoeficientes")),
+              nav_panel("Análisis",
+                        verbatimTextOutput("oanalisis"),
+                        hr(),
+                        actionButton("ibtnia", "Interpretar con IA",
+                                     icon = icon("robot")),
+                        uiOutput("ointerpretacion"))))
+)
+
+server <- function(input, output) {
+
+  modelo <- reactive({
+    wine |>
+      select(price, points, country, variety) |>
+      collect() |>
+      mutate(
+        y           = if (input$ilog) log(price, 10) else price,
+        fct_country = factor(lump(country, top_countries)),
+        fct_variety = factor(lump(variety, top_varieties))
+      ) |>
+      lm(y ~ points + fct_country + fct_variety, data = _)
+  })
+
+  output$ohistprecio <- renderPlot({
+    q <- if (input$ipais == "Other") {
+      wine |> filter(!country %in% !!top_countries)
+    } else {
+      wine |> filter(country == !!input$ipais)
+    }
+    q |> select(price) |> collect() |>
+      mutate(y = if (input$ilog) log(price, 10) else price) |>
+      ggplot(aes(x = y)) +
+      geom_histogram(bins = 15, col = "white", fill = "orange") +
+      labs(x = if (input$ilog) "log10(precio)" else "precio")
+  })
+
+  output$omapa <- renderLeaflet({
+    pal <- colorBin("YlOrRd",
+                    domain   = geo_data$med_price,
+                    bins     = quantile(geo_data$med_price,
+                                        probs = c(0, 0.25, 0.5, 0.75, 1),
+                                        na.rm = TRUE),
+                    na.color = "#cccccc")
+    geo_data |>
+      leaflet() |>
+      addTiles() |>
+      addPolygons(fillColor = ~pal(med_price), weight = 1, opacity = 1,
+                  color = "white", dashArray = "3", fillOpacity = 0.7,
+                  label = ~paste0(country, ": $", round(med_price, 1),
+                                  " | ", round(avg_points, 1), " pts",
+                                  " (", n_resenas, " reseñas)")) |>
+      addLegend(pal = pal, values = ~med_price,
+                title = "Precio mediano ($)", position = "bottomright")
+  })
+
+  output$odisp <- renderPlot({
+    col_raw <- sub("fct_", "", input$icolormodelo)
+    wine |>
+      select(points, price, all_of(col_raw)) |>
+      collect() |>
+      rename(color = 3) |>
+      mutate(y     = if (input$ilog) log(price, 10) else price,
+             color = lump(color, if (col_raw == "country") top_countries
+                                 else top_varieties)) |>
+      ggplot(aes(x = points, y = y, col = color)) +
+      geom_point(alpha = 0.3) +
+      labs(y = if (input$ilog) "log10(precio)" else "precio",
+           col = input$icolormodelo)
+  })
+
+  output$ocoeficientes <- renderDT({
+    datatable(tidy(modelo())) |> formatRound(columns = 2:5, digits = 4)
+  })
+
+  output$oanalisis <- renderPrint({
+    summary(modelo())
+  })
+
+  interpretacion <- eventReactive(input$ibtnia, {
+    summary_text <- paste(capture.output(summary(modelo())), collapse = "\n")
+    withProgress(message = "Consultando IA...", interpretar_modelo(summary_text))
+  })
+
+  output$ointerpretacion <- renderUI({
+    req(interpretacion())
+    div(style = "margin-top:1rem; padding:1rem; background:#f8f9fa; border-radius:6px;",
+        h5("Interpretación"),
+        p(interpretacion()))
+  })
+}
+
+shinyApp(ui, server)
+```
