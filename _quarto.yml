@@ -22,7 +22,8 @@ website:
         text: Shiny dashboards
       - href: despliegue.qmd
         text: Despliegue en producción
-        
+      - href: submission.qmd
+        text: Entrega obligatoria
       - href: about.qmd
         text: Profesor
 

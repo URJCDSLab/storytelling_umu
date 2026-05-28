@@ -1,0 +1,13 @@
+---
+title: "submission"
+format: html
+---
+
+# Máster Universitario en Marketing Digital y Analítico
+
+La entrega de las sesiones “Aplicaciones analíticas del márketing” será la carpeta app/ comprimida con los siguientes archivos:
+ - app.R (o el nombre que hayáis elegido) con el contenido de la aplicación.
+ - La base de datos (wine.db).
+ - Una pequeña memoria de 1 página máximo en PDF. La memoría deberá incluir el nombre del alumno, el link donde está desplegada la aplicación, y un pequeño resumen de las principales cosas aprendidas durante las 4 sesiones.
+
+La aplicación deberá contener los ejercicios resueltos y añadir a mayores un elemento de interactividad. Por ejemplo, un slider para mostrar únicamente los países en el mapa con más de X puntos, o en un rango de puntos.
