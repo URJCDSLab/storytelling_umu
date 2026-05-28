@@ -1,31 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/shiny.html</loc>
-    <lastmod>2026-05-28T13:20:27.038Z</lastmod>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/submission.html</loc>
+    <lastmod>2026-05-28T15:58:03.217Z</lastmod>
   </url>
   <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/fixes.html</loc>
-    <lastmod>2026-05-27T07:08:19.098Z</lastmod>
-  </url>
-  <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/despliegue.html</loc>
-    <lastmod>2026-05-27T07:08:17.426Z</lastmod>
-  </url>
-  <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/about.html</loc>
-    <lastmod>2026-05-27T07:08:16.795Z</lastmod>
-  </url>
-  <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/db.html</loc>
-    <lastmod>2026-05-28T10:33:37.170Z</lastmod>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/index.html</loc>
+    <lastmod>2026-05-27T08:28:56.950Z</lastmod>
   </url>
   <url>
     <loc>https://URJCDSLab.github.io/storytelling_umu/etl.html</loc>
     <lastmod>2026-05-27T07:08:17.426Z</lastmod>
   </url>
   <url>
-    <loc>https://URJCDSLab.github.io/storytelling_umu/index.html</loc>
-    <lastmod>2026-05-27T08:28:56.950Z</lastmod>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/db.html</loc>
+    <lastmod>2026-05-28T10:33:37.170Z</lastmod>
+  </url>
+  <url>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/about.html</loc>
+    <lastmod>2026-05-27T07:08:16.795Z</lastmod>
+  </url>
+  <url>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/despliegue.html</loc>
+    <lastmod>2026-05-27T07:08:17.426Z</lastmod>
+  </url>
+  <url>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/fixes.html</loc>
+    <lastmod>2026-05-27T07:08:19.098Z</lastmod>
+  </url>
+  <url>
+    <loc>https://URJCDSLab.github.io/storytelling_umu/shiny.html</loc>
+    <lastmod>2026-05-28T13:20:27.038Z</lastmod>
   </url>
 </urlset>
